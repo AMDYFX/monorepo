@@ -7,6 +7,7 @@ import { formatByPreference, formatDual, type DisplayCurrency } from '@/lib/curr
 
 interface CurrencyContextValue {
   displayCurrency: DisplayCurrency
+  isHydrated: boolean
   setDisplayCurrency: (currency: DisplayCurrency) => Promise<void>
   formatAmount: (amountNgn: number | string, amountUsdc: number | string) => string
   formatDual: (amountNgn: number | string, amountUsdc: number | string) => string
@@ -32,7 +33,20 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const locale = useLocale()
   const currency = usePreferencesStore((s) => s.currency) as DisplayCurrency
   const setPreference = usePreferencesStore((s) => s.setPreference)
+  const [isHydrated, setIsHydrated] = useState(false)
   const [, setTick] = useState(0)
+
+  useEffect(() => {
+    const unsubscribe = usePreferencesStore.persist.onFinishHydration(() => setIsHydrated(true))
+
+    if (usePreferencesStore.persist.hasHydrated()) {
+      setIsHydrated(true)
+    } else {
+      void usePreferencesStore.persist.rehydrate().catch(() => setIsHydrated(true))
+    }
+
+    return unsubscribe
+  }, [])
 
   const setDisplayCurrency = useCallback(
     async (next: DisplayCurrency) => {
@@ -66,11 +80,14 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<CurrencyContextValue>(
     () => ({
       displayCurrency: currency === 'USDC' ? 'USDC' : 'NGN',
+      isHydrated,
       setDisplayCurrency,
-      formatAmount: (ngn, usdc) => formatByPreference(ngn, usdc, currency === 'USDC' ? 'USDC' : 'NGN', locale),
+      formatAmount: (ngn, usdc) => isHydrated
+        ? formatByPreference(ngn, usdc, currency === 'USDC' ? 'USDC' : 'NGN', locale)
+        : '—',
       formatDual: (ngn, usdc) => formatDual(ngn, usdc, locale),
     }),
-    [currency, locale, setDisplayCurrency],
+    [currency, isHydrated, locale, setDisplayCurrency],
   )
 
   return <CurrencyContext.Provider value={value}>{children}</CurrencyContext.Provider>

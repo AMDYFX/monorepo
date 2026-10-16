@@ -32,7 +32,7 @@ import { useCountdown } from "@/hooks/useCountdown";
 type StakingMode = "ngn_deposit" | "ngn_balance" | "usdc";
 
 export default function StakingPage() {
-  const { isFrozen, freezeReason } = useRiskState();
+  const { hasHydrated: riskStateHydrated, isFrozen, freezeReason } = useRiskState();
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const { position: stakingPosition, refetch: refetchStakingPosition } = useStakingPosition({
     walletAddress,
@@ -121,7 +121,7 @@ export default function StakingPage() {
 
     const amount = Number(stakeAmount);
 
-    if (isFrozen && stakingMode === "ngn_balance") {
+    if ((!riskStateHydrated || isFrozen) && stakingMode === "ngn_balance") {
       setStatus(ACCOUNT_FROZEN_MESSAGE);
       handleError(new Error(ACCOUNT_FROZEN_MESSAGE), ACCOUNT_FROZEN_MESSAGE);
       return;
@@ -270,7 +270,7 @@ export default function StakingPage() {
         )}
       </div>
 
-      {isFrozen && (
+      {riskStateHydrated && isFrozen && (
         <FrozenAccountBanner
           freezeReason={freezeReason}
           deficit={deficit}
@@ -367,7 +367,7 @@ export default function StakingPage() {
             {/* Stake Form */}
             <div className="md:col-span-8">
               <StakeForm
-                isFrozen={isFrozen}
+                isFrozen={!riskStateHydrated || isFrozen}
                 isLoadingBalance={isLoadingBalance}
                 isStaking={isStaking}
                 ngnBalance={ngnBalance}
