@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 import { useLocale } from 'next-intl'
 import usePreferencesStore from '@/store/usePreferencesStore'
 import { formatByPreference, formatDual, type DisplayCurrency } from '@/lib/currency'
@@ -14,6 +14,11 @@ interface CurrencyContextValue {
 }
 
 const CurrencyContext = createContext<CurrencyContextValue | null>(null)
+
+const subscribeToPreferencesHydration = (onStoreChange: () => void) =>
+  usePreferencesStore.persist.onFinishHydration(onStoreChange)
+const getPreferencesHydrationSnapshot = () => usePreferencesStore.persist.hasHydrated()
+const getServerPreferencesHydrationSnapshot = () => false
 
 async function persistDisplayCurrency(currency: DisplayCurrency): Promise<void> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
@@ -33,20 +38,21 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const locale = useLocale()
   const currency = usePreferencesStore((s) => s.currency) as DisplayCurrency
   const setPreference = usePreferencesStore((s) => s.setPreference)
-  const [isHydrated, setIsHydrated] = useState(false)
+  const isHydrated = useSyncExternalStore(
+    subscribeToPreferencesHydration,
+    getPreferencesHydrationSnapshot,
+    getServerPreferencesHydrationSnapshot,
+  )
+  const [hydrationFailed, setHydrationFailed] = useState(false)
   const [, setTick] = useState(0)
 
   useEffect(() => {
-    const unsubscribe = usePreferencesStore.persist.onFinishHydration(() => setIsHydrated(true))
-
-    if (usePreferencesStore.persist.hasHydrated()) {
-      setIsHydrated(true)
-    } else {
-      void usePreferencesStore.persist.rehydrate().catch(() => setIsHydrated(true))
+    if (!usePreferencesStore.persist.hasHydrated()) {
+      void Promise.resolve(usePreferencesStore.persist.rehydrate()).catch(() => setHydrationFailed(true))
     }
-
-    return unsubscribe
   }, [])
+
+  const preferencesReady = isHydrated || hydrationFailed
 
   const setDisplayCurrency = useCallback(
     async (next: DisplayCurrency) => {
@@ -80,14 +86,14 @@ export function CurrencyProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<CurrencyContextValue>(
     () => ({
       displayCurrency: currency === 'USDC' ? 'USDC' : 'NGN',
-      isHydrated,
+      isHydrated: preferencesReady,
       setDisplayCurrency,
-      formatAmount: (ngn, usdc) => isHydrated
+      formatAmount: (ngn, usdc) => preferencesReady
         ? formatByPreference(ngn, usdc, currency === 'USDC' ? 'USDC' : 'NGN', locale)
         : '—',
       formatDual: (ngn, usdc) => formatDual(ngn, usdc, locale),
     }),
-    [currency, isHydrated, locale, setDisplayCurrency],
+    [currency, locale, preferencesReady, setDisplayCurrency],
   )
 
   return <CurrencyContext.Provider value={value}>{children}</CurrencyContext.Provider>

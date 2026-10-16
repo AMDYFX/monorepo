@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import useRiskStore from "@/store/useRiskStore";
+
+const subscribeToRiskHydration = (onStoreChange: () => void) =>
+  useRiskStore.persist.onFinishHydration(onStoreChange);
+const getRiskHydrationSnapshot = () => useRiskStore.persist.hasHydrated();
+const getServerRiskHydrationSnapshot = () => false;
 
 interface UseRiskStateResult {
   hasHydrated: boolean;
@@ -14,7 +19,13 @@ interface UseRiskStateResult {
 }
 
 export function useRiskState(): UseRiskStateResult {
-  const [hasHydrated, setHasHydrated] = useState(false);
+  const isStoreHydrated = useSyncExternalStore(
+    subscribeToRiskHydration,
+    getRiskHydrationSnapshot,
+    getServerRiskHydrationSnapshot,
+  );
+  const [hydrationFailed, setHydrationFailed] = useState(false);
+  const hasHydrated = isStoreHydrated || hydrationFailed;
   const { 
     isFrozen, 
     freezeReason, 
@@ -25,15 +36,9 @@ export function useRiskState(): UseRiskStateResult {
   } = useRiskStore();
 
   useEffect(() => {
-    const unsubscribe = useRiskStore.persist.onFinishHydration(() => setHasHydrated(true));
-
-    if (useRiskStore.persist.hasHydrated()) {
-      setHasHydrated(true);
-    } else {
-      void useRiskStore.persist.rehydrate().catch(() => setHasHydrated(true));
+    if (!useRiskStore.persist.hasHydrated()) {
+      void Promise.resolve(useRiskStore.persist.rehydrate()).catch(() => setHydrationFailed(true));
     }
-
-    return unsubscribe;
   }, []);
 
   useEffect(() => {
