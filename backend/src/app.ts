@@ -163,6 +163,12 @@ import { createPropertyPhotosRouter } from "./routes/propertyPhotos.js";
 import { createAccountRouter } from "./routes/account.js";
 import { createAdminDataRetentionRouter } from "./routes/adminDataRetention.js";
 import {
+  createUserErasureRouter,
+  createAdminErasureRouter,
+} from "./routes/erasure.js";
+import { initErasureRequestStore } from "./models/erasureRequestStore.js";
+import { erasureService } from "./services/erasureService.js";
+import {
   PostgresTenantApplicationStore,
   initTenantApplicationStore,
 } from "./models/tenantApplicationStore.js";
@@ -534,6 +540,9 @@ export function createApp() {
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
     initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
+    // ErasureService is the Postgres erasure request store (also used by the
+    // data-retention job for expiry).
+    initErasureRequestStore(erasureService);
     initWhistleblowerSignupApplicationStore(
       new PostgresWhistleblowerSignupApplicationStore(),
     );
@@ -769,6 +778,14 @@ export function createApp() {
     app.use("/api/auth", createAuthRateLimiter(env), authRouter);
     app.use("/api/conversion", createConversionRouter(conversionRateService));
     app.use("/api/user", createUserPreferencesRouter());
+    app.use(
+      "/api/user/erasure",
+      createUserErasureRouter({ ngnWalletService }),
+    );
+    app.use(
+      "/api/admin/erasure",
+      createAdminErasureRouter({ ngnWalletService }),
+    );
     app.use("/api", createBalanceRouter(sorobanAdapter));
     app.use("/api", createReceiptsRouter(receiptRepo));
     app.use(
@@ -957,6 +974,14 @@ export function createApp() {
   app.use("/api/v1/admin/analytics", createAdminAnalyticsRouter());
   app.use("/api/v1/admin", createSettlementAdminRouter());
   app.use("/api/v1/admin/disputes", createDisputeAdminRouter());
+  app.use(
+    "/api/v1/user/erasure",
+    createUserErasureRouter({ ngnWalletService }),
+  );
+  app.use(
+    "/api/v1/admin/erasure",
+    createAdminErasureRouter({ ngnWalletService }),
+  );
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
   app.use(

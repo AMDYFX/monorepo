@@ -121,6 +121,8 @@ export type AuditEventType =
   // Data privacy / erasure
   | 'USER_ERASURE_REQUESTED'
   | 'USER_ERASURE_COMPLETED'
+  | 'USER_ERASURE_CANCELLED'
+  | 'USER_ERASURE_EXPIRED'
   // Credit bureau
   | 'CREDIT_REPORT_PULLED'
   | 'CREDIT_REPORT_VIEWED'

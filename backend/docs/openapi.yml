@@ -3989,6 +3989,240 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/v1/user/erasure:
+    post:
+      summary: Request account erasure
+      description: |
+        Creates a pending NDPA/GDPR right-to-erasure request for the caller. An
+        admin with `erasure:manage` must confirm it before `confirmBy` (30 days),
+        otherwise the data-retention job expires it.
+
+        Shelterflex accounts have no password, so the caller must re-confirm
+        their identity with a FRESH login proof of the same kind they log in
+        with, exactly one of:
+        - `otp`: a code obtained from `POST /api/v1/auth/request-otp` for the
+          account's email (consumed on success; same expiry/attempt limits as login);
+        - `signedChallengeXdr`: for wallet-only accounts, the challenge from
+          `POST /api/v1/auth/wallet/challenge` signed by the linked wallet.
+
+        Refused with 409 while the user is a party (tenant or landlord) to an
+        active or at-risk deal, or holds a non-zero NGN wallet balance.
+      operationId: requestAccountErasure
+      tags:
+        - Erasure
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              description: Provide exactly one of otp or signedChallengeXdr.
+              properties:
+                otp:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+                signedChallengeXdr:
+                  type: string
+      responses:
+        '201':
+          description: Erasure request created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErasureRequestEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Re-authentication failed (wrong, expired or missing OTP / wallet signature)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: |
+            A request is already pending, or erasure is blocked. When blocked,
+            `error.details.blockers` lists what must be settled first
+            (`active_deal` with `count`, `wallet_balance` with `balanceNgn`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: Get my latest erasure request
+      description: Returns the caller's most recent erasure request (any status) including `confirmBy`, or `null` if none exists.
+      operationId: getAccountErasure
+      tags:
+        - Erasure
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Latest erasure request, or null
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/ErasureRequest'
+                    nullable: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Cancel my pending erasure request
+      description: Cancels the caller's pending erasure request.
+      operationId: cancelAccountErasure
+      tags:
+        - Erasure
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Request cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErasureRequestEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No pending erasure request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/erasure:
+    get:
+      summary: List erasure requests (admin)
+      description: Lists erasure requests, newest first. Requires the `erasure:manage` permission.
+      operationId: listErasureRequestsAdmin
+      tags:
+        - Erasure
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/ErasureRequestStatus'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Erasure requests
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, total, limit, offset]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ErasureRequest'
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller lacks the erasure:manage permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/erasure/{id}/confirm:
+    post:
+      summary: Confirm an erasure request (admin)
+      description: |
+        Confirms a pending, not-yet-overdue erasure request and anonymises the
+        user's PII (ErasureService.confirmErasure). The active-deal and wallet
+        balance checks are repeated first. Irreversible. Requires `erasure:manage`.
+      operationId: confirmErasureRequestAdmin
+      tags:
+        - Erasure
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Erasure completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErasureRequestEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller lacks the erasure:manage permission
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Erasure request not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: |
+            Request is not pending (completed / cancelled / expired), is past
+            `confirmBy`, or erasure is blocked by an active deal or non-zero
+            wallet balance (see `error.details.blockers`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
   schemas:
@@ -4033,6 +4267,43 @@ components:
         createdAt:
           type: string
           format: date-time
+    ErasureRequestStatus:
+      type: string
+      enum: [pending, completed, cancelled, expired]
+    ErasureRequest:
+      type: object
+      required: [id, userId, status, requestedAt, confirmBy, confirmedAt, confirmedBy]
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        status:
+          $ref: '#/components/schemas/ErasureRequestStatus'
+        requestedAt:
+          type: string
+          format: date-time
+        confirmBy:
+          type: string
+          format: date-time
+          description: Deadline for admin confirmation; pending requests past it are expired.
+        confirmedAt:
+          type: string
+          format: date-time
+          nullable: true
+        confirmedBy:
+          type: string
+          nullable: true
+          description: Admin user id that confirmed the erasure.
+    ErasureRequestEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ErasureRequest'
     User:
       type: object
       required:
@@ -5727,5 +5998,7 @@ tags:
     description: Staking operations (stake, unstake, claim rewards)
   - name: Support
     description: Public support/contact message intake
+  - name: Erasure
+    description: Account erasure (NDPA/GDPR right-to-erasure) requests and admin review
   - name: Governance
     description: Stake-weighted parameter governance proposals and voting (contracts/governance)
