@@ -22,9 +22,7 @@ import { UnstakeModal } from "./unstake-modal";
 import { PositionCard, formatUsdc } from "./PositionCard";
 import { StakeForm } from "./StakeForm";
 import { HistoryTable } from "./HistoryTable";
-import { DelegationPanel } from "./DelegationPanel";
 import { StakingClaimFlow } from "./StakingClaimFlow";
-import { EpochRewardsPanel } from "./EpochRewardsPanel";
 import { stellarWallet } from "@/lib/stellar-wallet";
 import { walletAuthManager } from "@/lib/wallet-auth";
 import { useCountdown } from "@/hooks/useCountdown";
@@ -326,18 +324,13 @@ export default function StakingPage() {
         /* STAKING DASHBOARD BODY (AUTHORIZED STATE) */
         <div className="space-y-6">
           
-          {/* Hero Stats — the directly staked staking_pool position. Delegated
-              stake lives in a separate contract and is shown on its own below. */}
+          {/* Hero Stats — the directly staked staking_pool position. */}
           <div className="space-y-2">
             <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
               Directly staked position
             </p>
             <PositionCard position={stakingPosition?.position || null} />
           </div>
-
-          <DelegationPanel walletAddress={walletAddress} />
-
-          <EpochRewardsPanel />
 
           <Card className="border-2 border-foreground/10 bg-card shadow-sm">
             <CardHeader className="pb-3">

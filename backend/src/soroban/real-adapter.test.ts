@@ -103,7 +103,6 @@ describe('RealSorobanAdapter', () => {
     stakingRewardsId: 'CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCD4Z5',
     usdcTokenId: 'CDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD5A6',
     oraclePriceFeedsId: 'CEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEED6B7',
-    stakeDelegationId: 'CFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE7C8',
     adminSecret: 'SXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX1',
   }
 
@@ -293,84 +292,6 @@ describe('RealSorobanAdapter', () => {
       })
 
       await expect(adapter.isOraclePriceStale('NGN_USDC')).resolves.toBe(true)
-    })
-  })
-
-  describe('stake_delegation (#1489)', () => {
-    it('should throw ConfigurationError when stakeDelegationId not set', async () => {
-      const adapterWithoutDelegation = new RealSorobanAdapter({
-        ...mockConfig,
-        stakeDelegationId: undefined,
-      })
-
-      await expect(
-        adapterWithoutDelegation.getDelegations('GABC123'),
-      ).rejects.toThrow(ConfigurationError)
-      await expect(
-        adapterWithoutDelegation.delegateStake('GABC123', 'GDEF456', 1_000_000n),
-      ).rejects.toThrow(ConfigurationError)
-    })
-
-    it('should map get_delegations rows onto DelegationRecord', async () => {
-      const { rpc, scValToNative } = await import('@stellar/stellar-sdk')
-
-      vi.mocked(rpc.Api.isSimulationSuccess).mockReturnValue(true)
-      vi.mocked(scValToNative).mockReturnValueOnce([
-        { delegatee: 'GDEF456', amount: 5_000_000n, activated_epoch: 3 },
-      ])
-      mockServer.simulateTransaction.mockResolvedValue({ result: { retval: {} } })
-
-      const delegations = await adapter.getDelegations('GABC123')
-
-      expect(delegations).toEqual([
-        { delegatee: 'GDEF456', amount: 5_000_000n, activatedEpoch: 3 },
-      ])
-    })
-
-    it('should read the delegation-side staked balance, epoch and claimables', async () => {
-      const { rpc, scValToNative } = await import('@stellar/stellar-sdk')
-
-      vi.mocked(rpc.Api.isSimulationSuccess).mockReturnValue(true)
-      mockServer.simulateTransaction.mockResolvedValue({ result: { retval: {} } })
-
-      vi.mocked(scValToNative).mockReturnValueOnce(12_000_000n)
-      await expect(adapter.getDelegationStakedBalance('GABC123')).resolves.toBe(12_000_000n)
-
-      vi.mocked(scValToNative).mockReturnValueOnce(7)
-      await expect(adapter.getDelegationEpoch()).resolves.toBe(7)
-
-      vi.mocked(scValToNative).mockReturnValueOnce(900_000n)
-      await expect(adapter.getDelegateeClaimable('GDEF456')).resolves.toBe(900_000n)
-
-      vi.mocked(scValToNative).mockReturnValueOnce(100_000n)
-      await expect(adapter.getDelegateeCommissionClaimable('GDEF456')).resolves.toBe(100_000n)
-    })
-
-    it('should submit writes through the admin signing service', async () => {
-      const executeSpy = vi
-        .spyOn((adapter as any).adminSigningService, 'executeAdminOperation')
-        .mockResolvedValue('tx_hash_delegation')
-
-      await expect(
-        adapter.delegateStake('GABC123', 'GDEF456', 5_000_000n),
-      ).resolves.toBe('tx_hash_delegation')
-      await adapter.requestUndelegate('GABC123', 'GDEF456', 2_000_000n)
-      await adapter.completeUndelegate('GABC123', 'GDEF456')
-      await adapter.claimDelegateeRewards('GDEF456')
-      await adapter.setDelegateeCommission('GDEF456', 1_000)
-      await adapter.claimDelegateeCommission('GDEF456')
-
-      expect(executeSpy.mock.calls.map((call) => call[0].operation)).toEqual([
-        'delegate',
-        'request_undelegate',
-        'complete_undelegate',
-        'claim_delegatee_rewards',
-        'set_commission',
-        'claim_commission',
-      ])
-      for (const call of executeSpy.mock.calls) {
-        expect(call[0].contractId).toBe(mockConfig.stakeDelegationId)
-      }
     })
   })
 

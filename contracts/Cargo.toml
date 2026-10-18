@@ -14,21 +14,9 @@ members = [
   "contract_access",
   "timelock",
   "rent_schedule",
-  "vesting_schedule",
 
-  "schema_registry",
-  "allowlist_registry",
   "bond_collateral",
-  "reentrancy_guard",
-  "epoch_rewards",
   "slashing_module",
-  "stake_delegation",
-  "oracle_price_feeds",
-  "tenant_reputation",
-  "inspector_bond",
-  "rent_to_own",
-  "governance",
-  "multisig_admin",
 ]
 
 [profile.release]
