@@ -189,6 +189,22 @@ import {
   PostgresWhistleblowerSignupApplicationStore,
   initWhistleblowerSignupApplicationStore,
 } from "./models/whistleblowerSignupApplicationStore.js";
+import {
+  PostgresPropertyInspectionStore,
+  initPropertyInspectionStore,
+} from "./models/propertyInspectionStore.js";
+import {
+  PostgresInspectorProfileStore,
+  initInspectorProfileStore,
+} from "./models/inspectorProfileStore.js";
+import {
+  createPropertyInspectionsRouter,
+  createListingInspectionRouter,
+} from "./routes/propertyInspections.js";
+import {
+  createAdminInspectionsRouter,
+  createAdminInspectorsRouter,
+} from "./routes/adminInspections.js";
 import { createWhistleblowerReportsRouter } from "./routes/whistleblowerReports.js";
 import { createTenantOnboardingRouter } from "./routes/tenantOnboarding.js";
 import { createDocsRouter } from "./routes/docs.js";
@@ -555,6 +571,8 @@ export function createApp() {
     initUnderwritingDecisionTraceStore(
       new PostgresUnderwritingDecisionTraceStore(),
     );
+    initPropertyInspectionStore(new PostgresPropertyInspectionStore());
+    initInspectorProfileStore(new PostgresInspectorProfileStore());
   }
 
   // Indexer
@@ -926,6 +944,10 @@ export function createApp() {
     app.use("/api/admin", createSettlementAdminRouter());
     app.use("/api/admin", createAdminRolesRouter());
     app.use("/api/reports", createWhistleblowerReportsRouter());
+    app.use("/api/inspections", createPropertyInspectionsRouter());
+    app.use("/api/listings", createListingInspectionRouter());
+    app.use("/api/admin/inspections", createAdminInspectionsRouter());
+    app.use("/api/admin/inspectors", createAdminInspectorsRouter());
   }
 
   app.use("/api/v1/wallet", createWalletRouter(walletService));
@@ -989,6 +1011,10 @@ export function createApp() {
     "/api/v1/admin/erasure",
     createAdminErasureRouter({ ngnWalletService }),
   );
+  app.use("/api/v1/inspections", createPropertyInspectionsRouter());
+  app.use("/api/v1/listings", createListingInspectionRouter());
+  app.use("/api/v1/admin/inspections", createAdminInspectionsRouter());
+  app.use("/api/v1/admin/inspectors", createAdminInspectorsRouter());
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
   app.use(

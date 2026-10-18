@@ -4636,8 +4636,610 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/inspections:
+    post:
+      summary: Create a property inspection
+      description: |
+        Creates a `pending` inspection for a listing. Only callers with a
+        `verified` inspector profile may create inspections; the caller becomes
+        the assigned inspector (`inspectorId`) and is the only user allowed to
+        act on it.
+      operationId: createPropertyInspection
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [listingId, scheduledAt]
+              properties:
+                listingId:
+                  type: string
+                  format: uuid
+                scheduledAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Inspection created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyInspectionEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspections/{id}/start:
+    patch:
+      summary: Start an inspection
+      description: Transitions the inspection from `pending` to `in_progress`. Assigned verified inspector only.
+      operationId: startPropertyInspection
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      responses:
+        '200':
+          description: Inspection started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyInspectionEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        '409':
+          $ref: '#/components/responses/InspectionInvalidTransition'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspections/{id}/checklist:
+    put:
+      summary: Upsert inspection checklist items
+      description: |
+        Inserts or updates checklist items keyed by (`category`, `item`). Only
+        allowed while the inspection is `in_progress`. Returns every item on
+        the inspection.
+      operationId: upsertInspectionChecklist
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  maxItems: 200
+                  items:
+                    type: object
+                    required: [category, item, result]
+                    properties:
+                      category:
+                        $ref: '#/components/schemas/InspectionCategory'
+                      item:
+                        type: string
+                        minLength: 1
+                        maxLength: 200
+                      result:
+                        $ref: '#/components/schemas/InspectionResult'
+                      notes:
+                        type: string
+                        maxLength: 2000
+      responses:
+        '200':
+          description: Checklist saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/InspectionChecklistItem'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        '409':
+          $ref: '#/components/responses/InspectionInvalidTransition'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspections/{id}/photos/presign:
+    post:
+      summary: Get a presigned upload URL for an inspection photo
+      description: |
+        Returns a presigned PUT URL and the `objectKey` to register via
+        `POST /api/v1/inspections/{id}/photos` after uploading. Only allowed
+        while the inspection is `in_progress`.
+      operationId: presignInspectionPhoto
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentType]
+              properties:
+                contentType:
+                  type: string
+                  enum: [image/jpeg, image/png, image/webp, image/heic]
+      responses:
+        '200':
+          description: Presigned upload issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [uploadUrl, objectKey, expiresAt]
+                    properties:
+                      uploadUrl:
+                        type: string
+                      objectKey:
+                        type: string
+                      expiresAt:
+                        type: string
+                        format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        '409':
+          $ref: '#/components/responses/InspectionInvalidTransition'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspections/{id}/photos:
+    post:
+      summary: Register an uploaded inspection photo
+      description: |
+        Records a photo previously uploaded with a presigned URL. `objectKey`
+        must be a key issued by the presign endpoint for this inspection. Only
+        allowed while the inspection is `in_progress`.
+      operationId: registerInspectionPhoto
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [objectKey]
+              properties:
+                objectKey:
+                  type: string
+                caption:
+                  type: string
+                  maxLength: 500
+                takenAt:
+                  type: string
+                  format: date-time
+      responses:
+        '201':
+          description: Photo registered
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/InspectionPhoto'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        '409':
+          $ref: '#/components/responses/InspectionInvalidTransition'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspections/{id}/submit:
+    post:
+      summary: Submit an inspection for review
+      description: |
+        Transitions `in_progress` -> `submitted`. Requires at least one
+        checklist item in each category (structural, plumbing, electrical,
+        safety, exterior) and at least 3 photos; otherwise responds 400 with
+        `details.missingCategories` and `details.photoCount`. No edits are
+        possible after submission.
+      operationId: submitPropertyInspection
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                inspectorNotes:
+                  type: string
+                  maxLength: 5000
+      responses:
+        '200':
+          description: Inspection submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyInspectionEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        '409':
+          $ref: '#/components/responses/InspectionInvalidTransition'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspections:
+    get:
+      summary: List property inspections for review
+      description: Requires the `inspections:review` permission.
+      operationId: listPropertyInspectionsAdmin
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/PropertyInspectionStatus'
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Inspections, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PropertyInspection'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspections/{id}:
+    get:
+      summary: Get a property inspection with its checklist and photos
+      description: Requires the `inspections:review` permission.
+      operationId: getPropertyInspectionAdmin
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      responses:
+        '200':
+          description: Inspection detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/PropertyInspection'
+                      - type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/InspectionChecklistItem'
+                          photos:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/InspectionPhoto'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspections/{id}/approve:
+    post:
+      summary: Approve a submitted inspection
+      description: |
+        Requires the `inspections:review` permission. Transitions `submitted`
+        -> `approved` and, in the same database transaction, sets
+        `has_verified_inspection = true` on the listing and recomputes its
+        `trust_score` (0-100) from the checklist: weighted pass ratio with
+        structural/safety = 3, electrical/plumbing = 2, exterior = 1; `na`
+        items excluded; capped at 60 if any safety item failed; 50 when no
+        item was pass/fail.
+      operationId: approvePropertyInspection
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      responses:
+        '200':
+          description: Inspection approved and listing trust score updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [inspection, trustScore]
+                    properties:
+                      inspection:
+                        $ref: '#/components/schemas/PropertyInspection'
+                      trustScore:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        '409':
+          $ref: '#/components/responses/InspectionInvalidTransition'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspections/{id}/reject:
+    post:
+      summary: Reject a submitted inspection
+      description: Requires the `inspections:review` permission. Transitions `submitted` -> `rejected`; the listing is not changed.
+      operationId: rejectPropertyInspection
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/InspectionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        '200':
+          description: Inspection rejected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PropertyInspectionEnvelope'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        '409':
+          $ref: '#/components/responses/InspectionInvalidTransition'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspectors/{userId}/verification:
+    patch:
+      summary: Set an inspector's verification status
+      description: |
+        Requires the `inspectors:verify` permission. Upserts the user's
+        inspector profile with the given `verification_status`. Only
+        `verified` inspectors can create and work on inspections. This is a
+        minimal subset of inspector onboarding (#1902).
+      operationId: setInspectorVerification
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [pending, verified, suspended]
+      responses:
+        '200':
+          description: Inspector profile updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      verificationStatus:
+                        type: string
+                        enum: [pending, verified, suspended]
+                      createdAt:
+                        type: string
+                        format: date-time
+                      updatedAt:
+                        type: string
+                        format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/InspectionForbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/listings/{id}/inspection:
+    get:
+      summary: Public summary of a listing's latest approved inspection
+      description: |
+        Returns the latest approved inspection for an approved (publicly
+        visible) listing. Contains no inspector or reviewer identity and no
+        free-text notes. 404 when the listing is not public or has no
+        approved inspection.
+      operationId: getListingInspectionSummary
+      tags:
+        - Inspections
+      security: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Listing ID
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Inspection summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/ListingInspectionSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '404':
+          $ref: '#/components/responses/InspectionNotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
+    InspectionId:
+      name: id
+      in: path
+      required: true
+      description: Property inspection ID
+      schema:
+        type: string
+        format: uuid
   schemas:
     TenantDocumentCategory:
       type: string
@@ -4806,6 +5408,164 @@ components:
           format: date-time
         attachment:
           $ref: '#/components/schemas/MessagingAttachment'
+
+    InspectionCategory:
+      type: string
+      enum: [structural, plumbing, electrical, safety, exterior]
+
+    InspectionResult:
+      type: string
+      enum: [pass, fail, na]
+
+    PropertyInspectionStatus:
+      type: string
+      enum: [pending, in_progress, submitted, approved, rejected]
+
+    PropertyInspection:
+      type: object
+      required: [id, listingId, inspectorId, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        listingId:
+          type: string
+          format: uuid
+        inspectorId:
+          type: string
+          description: Assigned inspector (the verified inspector who created the inspection)
+        status:
+          $ref: '#/components/schemas/PropertyInspectionStatus'
+        scheduledAt:
+          type: string
+          format: date-time
+        submittedAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+        inspectorNotes:
+          type: string
+        rejectionReason:
+          type: string
+        reviewedBy:
+          type: string
+        reviewedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PropertyInspectionEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/PropertyInspection'
+
+    InspectionChecklistItem:
+      type: object
+      required: [id, inspectionId, category, item, result]
+      properties:
+        id:
+          type: string
+          format: uuid
+        inspectionId:
+          type: string
+          format: uuid
+        category:
+          $ref: '#/components/schemas/InspectionCategory'
+        item:
+          type: string
+        result:
+          $ref: '#/components/schemas/InspectionResult'
+        notes:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    InspectionPhoto:
+      type: object
+      required: [id, inspectionId, url]
+      properties:
+        id:
+          type: string
+          format: uuid
+        inspectionId:
+          type: string
+          format: uuid
+        url:
+          type: string
+          description: Storage object key issued by the presign endpoint
+        caption:
+          type: string
+        takenAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    ListingInspectionSummary:
+      type: object
+      required: [listingId, inspectionId, trustScore, hasVerifiedInspection, categories, items, photoCount]
+      properties:
+        listingId:
+          type: string
+          format: uuid
+        inspectionId:
+          type: string
+          format: uuid
+        submittedAt:
+          type: string
+          format: date-time
+        approvedAt:
+          type: string
+          format: date-time
+        trustScore:
+          type: integer
+          minimum: 0
+          maximum: 100
+        hasVerifiedInspection:
+          type: boolean
+        categories:
+          type: array
+          items:
+            type: object
+            required: [category, pass, fail, na]
+            properties:
+              category:
+                $ref: '#/components/schemas/InspectionCategory'
+              pass:
+                type: integer
+              fail:
+                type: integer
+              na:
+                type: integer
+        items:
+          type: array
+          items:
+            type: object
+            required: [category, item, result]
+            properties:
+              category:
+                $ref: '#/components/schemas/InspectionCategory'
+              item:
+                type: string
+              result:
+                $ref: '#/components/schemas/InspectionResult'
+        photoCount:
+          type: integer
 
     User:
       type: object
@@ -6374,6 +7134,41 @@ components:
             amountUsdc: { type: string }
 
   responses:
+    InspectionForbidden:
+      description: Caller lacks the required permission, is not a verified inspector, or is not the assigned inspector
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "FORBIDDEN"
+              message: "Only verified inspectors can perform this action"
+
+    InspectionNotFound:
+      description: Inspection or listing not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "NOT_FOUND"
+              message: "Inspection not found"
+
+    InspectionInvalidTransition:
+      description: The inspection's current status does not allow this action
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "INVALID_STATE_TRANSITION"
+              message: "Cannot submit an inspection with status 'pending'"
+              details:
+                status: pending
+
     Error:
       description: Unexpected error
       content:
@@ -6505,5 +7300,7 @@ tags:
     description: Account erasure (NDPA/GDPR right-to-erasure) requests and admin review
   - name: Messaging
     description: Conversations, messages and message attachments (presigned uploads/downloads)
+  - name: Inspections
+    description: Property inspections (checklist + photos) feeding the listing trust score, and inspector verification
   - name: Governance
     description: Stake-weighted parameter governance proposals and voting (contracts/governance)
