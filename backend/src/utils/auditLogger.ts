@@ -97,6 +97,13 @@ export type AuditEventType =
   | 'INSPECTOR_REPORT_SUBMITTED'
   | 'INSPECTOR_REPORT_APPROVED'
   | 'INSPECTOR_REPORT_REJECTED'
+  // Property inspections (#1904) and inspector verification
+  | 'INSPECTION_CREATED'
+  | 'INSPECTION_STARTED'
+  | 'INSPECTION_SUBMITTED'
+  | 'INSPECTION_APPROVED'
+  | 'INSPECTION_REJECTED'
+  | 'INSPECTOR_VERIFICATION_UPDATED'
   // Rent guarantee insurance
   | 'INSURANCE_QUOTE_REQUESTED'
   | 'INSURANCE_POLICY_PURCHASED'
@@ -121,6 +128,8 @@ export type AuditEventType =
   // Data privacy / erasure
   | 'USER_ERASURE_REQUESTED'
   | 'USER_ERASURE_COMPLETED'
+  | 'USER_ERASURE_CANCELLED'
+  | 'USER_ERASURE_EXPIRED'
   // Credit bureau
   | 'CREDIT_REPORT_PULLED'
   | 'CREDIT_REPORT_VIEWED'
@@ -131,6 +140,10 @@ export type AuditEventType =
   | 'AGREEMENT_FULLY_EXECUTED'
   // Landlord verification
   | 'LANDLORD_VERIFICATION_UPDATED'
+  // Messaging attachments
+  | 'MESSAGE_ATTACHMENT_UPLOAD_URL_ISSUED'
+  | 'MESSAGE_ATTACHMENT_DOWNLOAD_URL_ISSUED'
+  | 'MESSAGE_DELETED'
   // State-changing operations (auto-generated)
   | 'STATE_CHANGED'
   | 'STATE_DELETED'

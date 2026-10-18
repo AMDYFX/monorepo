@@ -150,6 +150,8 @@ import { authenticateToken } from "./middleware/auth.js";
 import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
+import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
+import { createMessagingRouter } from "./routes/messaging.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
 import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSettlementAdminRouter } from "./routes/settlementAdmin.js";
@@ -162,9 +164,23 @@ import { createPropertyPhotosRouter } from "./routes/propertyPhotos.js";
 import { createAccountRouter } from "./routes/account.js";
 import { createAdminDataRetentionRouter } from "./routes/adminDataRetention.js";
 import {
+  createUserErasureRouter,
+  createAdminErasureRouter,
+} from "./routes/erasure.js";
+import { initErasureRequestStore } from "./models/erasureRequestStore.js";
+import { erasureService } from "./services/erasureService.js";
+import {
   PostgresTenantApplicationStore,
   initTenantApplicationStore,
 } from "./models/tenantApplicationStore.js";
+import {
+  PostgresTenantDocumentVaultStore,
+  initTenantDocumentVaultStore,
+} from "./models/tenantDocumentVaultStore.js";
+import {
+  PostgresMessagingStore,
+  initMessagingStore,
+} from "./models/messagingStore.js";
 import {
   PostgresUnderwritingDecisionTraceStore,
   initUnderwritingDecisionTraceStore,
@@ -173,6 +189,22 @@ import {
   PostgresWhistleblowerSignupApplicationStore,
   initWhistleblowerSignupApplicationStore,
 } from "./models/whistleblowerSignupApplicationStore.js";
+import {
+  PostgresPropertyInspectionStore,
+  initPropertyInspectionStore,
+} from "./models/propertyInspectionStore.js";
+import {
+  PostgresInspectorProfileStore,
+  initInspectorProfileStore,
+} from "./models/inspectorProfileStore.js";
+import {
+  createPropertyInspectionsRouter,
+  createListingInspectionRouter,
+} from "./routes/propertyInspections.js";
+import {
+  createAdminInspectionsRouter,
+  createAdminInspectorsRouter,
+} from "./routes/adminInspections.js";
 import { createWhistleblowerReportsRouter } from "./routes/whistleblowerReports.js";
 import { createTenantOnboardingRouter } from "./routes/tenantOnboarding.js";
 import { createDocsRouter } from "./routes/docs.js";
@@ -528,12 +560,19 @@ export function createApp() {
   // Tenant Application Store — swap to Postgres when DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
+    initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
+    // ErasureService is the Postgres erasure request store (also used by the
+    // data-retention job for expiry).
+    initErasureRequestStore(erasureService);
+    initMessagingStore(new PostgresMessagingStore());
     initWhistleblowerSignupApplicationStore(
       new PostgresWhistleblowerSignupApplicationStore(),
     );
     initUnderwritingDecisionTraceStore(
       new PostgresUnderwritingDecisionTraceStore(),
     );
+    initPropertyInspectionStore(new PostgresPropertyInspectionStore());
+    initInspectorProfileStore(new PostgresInspectorProfileStore());
   }
 
   // Indexer
@@ -763,6 +802,14 @@ export function createApp() {
     app.use("/api/auth", createAuthRateLimiter(env), authRouter);
     app.use("/api/conversion", createConversionRouter(conversionRateService));
     app.use("/api/user", createUserPreferencesRouter());
+    app.use(
+      "/api/user/erasure",
+      createUserErasureRouter({ ngnWalletService }),
+    );
+    app.use(
+      "/api/admin/erasure",
+      createAdminErasureRouter({ ngnWalletService }),
+    );
     app.use("/api", createBalanceRouter(sorobanAdapter));
     app.use("/api", createReceiptsRouter(receiptRepo));
     app.use(
@@ -886,6 +933,8 @@ export function createApp() {
     app.use("/api/landlord/properties", createLandlordPropertiesRouter());
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
+    app.use("/api/tenant/documents", createTenantDocumentsRouter());
+    app.use("/api/messaging", createMessagingRouter());
     app.use(
       "/api/whistleblower/applications",
       createWhistleblowerApplicationsRouter(),
@@ -895,6 +944,10 @@ export function createApp() {
     app.use("/api/admin", createSettlementAdminRouter());
     app.use("/api/admin", createAdminRolesRouter());
     app.use("/api/reports", createWhistleblowerReportsRouter());
+    app.use("/api/inspections", createPropertyInspectionsRouter());
+    app.use("/api/listings", createListingInspectionRouter());
+    app.use("/api/admin/inspections", createAdminInspectionsRouter());
+    app.use("/api/admin/inspectors", createAdminInspectorsRouter());
   }
 
   app.use("/api/v1/wallet", createWalletRouter(walletService));
@@ -950,6 +1003,18 @@ export function createApp() {
   app.use("/api/v1/admin/analytics", createAdminAnalyticsRouter());
   app.use("/api/v1/admin", createSettlementAdminRouter());
   app.use("/api/v1/admin/disputes", createDisputeAdminRouter());
+  app.use(
+    "/api/v1/user/erasure",
+    createUserErasureRouter({ ngnWalletService }),
+  );
+  app.use(
+    "/api/v1/admin/erasure",
+    createAdminErasureRouter({ ngnWalletService }),
+  );
+  app.use("/api/v1/inspections", createPropertyInspectionsRouter());
+  app.use("/api/v1/listings", createListingInspectionRouter());
+  app.use("/api/v1/admin/inspections", createAdminInspectionsRouter());
+  app.use("/api/v1/admin/inspectors", createAdminInspectorsRouter());
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
   app.use(
@@ -974,6 +1039,8 @@ export function createApp() {
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
+  app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
+  app.use("/api/v1/messaging", createMessagingRouter());
   app.use(
     "/api/v1/whistleblower/applications",
     createWhistleblowerApplicationsRouter(),
