@@ -150,6 +150,7 @@ import { authenticateToken } from "./middleware/auth.js";
 import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
+import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
 import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSettlementAdminRouter } from "./routes/settlementAdmin.js";
@@ -165,6 +166,10 @@ import {
   PostgresTenantApplicationStore,
   initTenantApplicationStore,
 } from "./models/tenantApplicationStore.js";
+import {
+  PostgresTenantDocumentVaultStore,
+  initTenantDocumentVaultStore,
+} from "./models/tenantDocumentVaultStore.js";
 import {
   PostgresUnderwritingDecisionTraceStore,
   initUnderwritingDecisionTraceStore,
@@ -528,6 +533,7 @@ export function createApp() {
   // Tenant Application Store — swap to Postgres when DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
+    initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
     initWhistleblowerSignupApplicationStore(
       new PostgresWhistleblowerSignupApplicationStore(),
     );
@@ -886,6 +892,7 @@ export function createApp() {
     app.use("/api/landlord/properties", createLandlordPropertiesRouter());
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
+    app.use("/api/tenant/documents", createTenantDocumentsRouter());
     app.use(
       "/api/whistleblower/applications",
       createWhistleblowerApplicationsRouter(),
@@ -974,6 +981,7 @@ export function createApp() {
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
+  app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
   app.use(
     "/api/v1/whistleblower/applications",
     createWhistleblowerApplicationsRouter(),

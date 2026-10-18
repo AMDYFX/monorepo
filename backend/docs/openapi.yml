@@ -3691,9 +3691,348 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/tenant/documents:
+    get:
+      summary: List the caller's documents
+      description: >-
+        Paginated list of the authenticated tenant's confirmed documents, newest first.
+        Owner-scoped; pending (unconfirmed) uploads are excluded.
+      operationId: listTenantDocuments
+      tags:
+        - Tenant Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: category
+          in: query
+          schema:
+            $ref: "#/components/schemas/TenantDocumentCategory"
+        - name: dealId
+          in: query
+          schema:
+            type: string
+        - name: search
+          in: query
+          description: Case-insensitive match on file name or description.
+          schema:
+            type: string
+            maxLength: 100
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Documents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, pagination]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/TenantDocument"
+                  pagination:
+                    type: object
+                    required: [page, pageSize, total, totalPages]
+                    properties:
+                      page:
+                        type: integer
+                      pageSize:
+                        type: integer
+                      total:
+                        type: integer
+                      totalPages:
+                        type: integer
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+    post:
+      summary: Confirm a presigned upload
+      description: >-
+        Second step of the presigned upload flow. Records the file metadata for one of the
+        caller's own pending uploads (identified by its objectKey). Enforces the 20 MB file
+        limit and the 500 MB per-tenant quota.
+      operationId: confirmTenantDocumentUpload
+      tags:
+        - Tenant Documents
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [objectKey, fileSizeBytes]
+              properties:
+                objectKey:
+                  type: string
+                  maxLength: 512
+                fileName:
+                  type: string
+                  maxLength: 255
+                fileSizeBytes:
+                  type: integer
+                  minimum: 1
+                  maximum: 20971520
+      responses:
+        "201":
+          description: Upload confirmed
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: "#/components/schemas/TenantDocument"
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: No pending upload with this objectKey belongs to the caller
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/tenant/documents/presign:
+    post:
+      summary: Start a presigned document upload
+      description: >-
+        Creates a pending document and returns a presigned PUT URL for an object key under the
+        caller's own storage prefix. Only PDF, JPEG and PNG are accepted. When category is
+        omitted it is derived from docType (id_card and passport → identity_document,
+        others → other).
+      operationId: presignTenantDocumentUpload
+      tags:
+        - Tenant Documents
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [docType, contentType]
+              properties:
+                docType:
+                  type: string
+                  enum: [id_card, passport, employment_letter, bank_statement, utility_bill, proof_of_address]
+                contentType:
+                  type: string
+                  enum: [application/pdf, image/jpeg, image/png]
+                category:
+                  $ref: "#/components/schemas/TenantDocumentCategory"
+                description:
+                  type: string
+                  maxLength: 500
+                dealId:
+                  type: string
+                  maxLength: 128
+      responses:
+        "201":
+          description: Upload URL issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [documentId, uploadUrl, objectKey, expiresAt]
+                    properties:
+                      documentId:
+                        type: string
+                      uploadUrl:
+                        type: string
+                        format: uri
+                      objectKey:
+                        type: string
+                      expiresAt:
+                        type: string
+                        format: date-time
+        "400":
+          $ref: "#/components/responses/ValidationError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/tenant/documents/{id}:
+    delete:
+      summary: Delete one of the caller's documents
+      description: >-
+        Soft-deletes the document and removes the stored object. Returns 404 for documents
+        that do not exist or belong to another user, and 403 for read-only leases provided by
+        the landlord. Audit-logged.
+      operationId: deleteTenantDocument
+      tags:
+        - Tenant Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Document deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [documentId, deleted]
+                    properties:
+                      documentId:
+                        type: string
+                      deleted:
+                        type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Read-only landlord-provided document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
+  /api/v1/tenant/documents/{id}/download:
+    get:
+      summary: Get a short-lived download URL
+      description: >-
+        Returns a presigned download URL for one of the caller's documents, valid for
+        expiresInSeconds (15 minutes). Returns 404 for another user's document. Audit-logged.
+      operationId: downloadTenantDocument
+      tags:
+        - Tenant Documents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Download URL issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [documentId, downloadUrl, expiresInSeconds]
+                    properties:
+                      documentId:
+                        type: string
+                      downloadUrl:
+                        type: string
+                        format: uri
+                      expiresInSeconds:
+                        type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        default:
+          $ref: "#/components/responses/Error"
+
 components:
   parameters:
   schemas:
+    TenantDocumentCategory:
+      type: string
+      enum: [lease_agreement, payment_receipt, identity_document, inspection_report, other]
+    TenantDocument:
+      type: object
+      required:
+        - id
+        - userId
+        - fileName
+        - fileFormat
+        - fileSizeBytes
+        - category
+        - description
+        - dealId
+        - isLandlordUploaded
+        - createdAt
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        fileName:
+          type: string
+        fileFormat:
+          type: string
+          example: pdf
+        fileSizeBytes:
+          type: integer
+        category:
+          $ref: "#/components/schemas/TenantDocumentCategory"
+        description:
+          type: string
+          nullable: true
+        dealId:
+          type: string
+          nullable: true
+        isLandlordUploaded:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
     User:
       type: object
       required:
