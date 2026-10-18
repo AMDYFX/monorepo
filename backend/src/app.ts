@@ -151,6 +151,7 @@ import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
 import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
+import { createMessagingRouter } from "./routes/messaging.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
 import { createNotificationsRouter } from "./routes/notifications.js";
 import { createSettlementAdminRouter } from "./routes/settlementAdmin.js";
@@ -176,6 +177,10 @@ import {
   PostgresTenantDocumentVaultStore,
   initTenantDocumentVaultStore,
 } from "./models/tenantDocumentVaultStore.js";
+import {
+  PostgresMessagingStore,
+  initMessagingStore,
+} from "./models/messagingStore.js";
 import {
   PostgresUnderwritingDecisionTraceStore,
   initUnderwritingDecisionTraceStore,
@@ -543,6 +548,7 @@ export function createApp() {
     // ErasureService is the Postgres erasure request store (also used by the
     // data-retention job for expiry).
     initErasureRequestStore(erasureService);
+    initMessagingStore(new PostgresMessagingStore());
     initWhistleblowerSignupApplicationStore(
       new PostgresWhistleblowerSignupApplicationStore(),
     );
@@ -910,6 +916,7 @@ export function createApp() {
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
     app.use("/api/tenant/documents", createTenantDocumentsRouter());
+    app.use("/api/messaging", createMessagingRouter());
     app.use(
       "/api/whistleblower/applications",
       createWhistleblowerApplicationsRouter(),
@@ -1007,6 +1014,7 @@ export function createApp() {
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
   app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
+  app.use("/api/v1/messaging", createMessagingRouter());
   app.use(
     "/api/v1/whistleblower/applications",
     createWhistleblowerApplicationsRouter(),

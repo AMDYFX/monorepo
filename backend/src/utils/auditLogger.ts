@@ -133,6 +133,10 @@ export type AuditEventType =
   | 'AGREEMENT_FULLY_EXECUTED'
   // Landlord verification
   | 'LANDLORD_VERIFICATION_UPDATED'
+  // Messaging attachments
+  | 'MESSAGE_ATTACHMENT_UPLOAD_URL_ISSUED'
+  | 'MESSAGE_ATTACHMENT_DOWNLOAD_URL_ISSUED'
+  | 'MESSAGE_DELETED'
   // State-changing operations (auto-generated)
   | 'STATE_CHANGED'
   | 'STATE_DELETED'

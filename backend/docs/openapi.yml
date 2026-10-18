@@ -4223,6 +4223,419 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/messaging/conversations:
+    post:
+      summary: Create a conversation
+      description: >-
+        Creates a conversation between the caller and the listed participants. The caller is
+        always added (role `admin`); other participants get role `member`. Part of the minimal
+        messaging core (#1896 subset).
+      operationId: createMessagingConversation
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [participantIds]
+              properties:
+                participantIds:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  description: User ids to add; must include at least one user other than the caller.
+                  items:
+                    type: string
+                subjectType:
+                  type: string
+                  maxLength: 64
+                  example: deal
+                subjectId:
+                  type: string
+                  maxLength: 128
+      responses:
+        '201':
+          description: Conversation created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MessagingConversation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+    get:
+      summary: List the caller's conversations
+      description: Conversations the caller participates in, most recently active first.
+      operationId: listMessagingConversations
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: Conversations
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MessagingConversation'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/messaging/conversations/{id}/messages:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: List messages in a conversation
+      description: Non-deleted messages, newest first. Participants only.
+      operationId: listMessagingMessages
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          required: false
+          description: Only return messages created strictly before this timestamp.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/MessagingMessage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Send a message
+      description: >-
+        Sends a message to the conversation. Participants only. A message needs a non-empty
+        `body` or an `attachment`. An attachment must reference an object issued by the
+        presign endpoint for this same conversation (`messaging/{conversationId}/...`) that has
+        been uploaded; its stored size and content type are re-checked (images or PDF, at most
+        10 MB). An object key can be attached to only one message.
+      operationId: sendMessagingMessage
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  maxLength: 4000
+                attachment:
+                  $ref: '#/components/schemas/MessagingAttachment'
+      responses:
+        '201':
+          description: Message sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MessagingMessage'
+        '400':
+          description: >-
+            Validation failed: empty message, disallowed type/size, key outside this
+            conversation's prefix, object not uploaded, or stored object does not match.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Attachment object is already used by another message
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/messaging/conversations/{id}/attachments/presign:
+    post:
+      summary: Get a presigned upload URL for a message attachment
+      description: >-
+        Issues a presigned PUT URL (valid 10 minutes) for an object under
+        `messaging/{conversationId}/{uuid}-{safeFileName}`. Participants only. Allowed types:
+        image/jpeg, image/png, image/webp, image/gif, application/pdf. Maximum size 10 MB. The
+        upload must use the declared Content-Type. Pass the returned `objectKey` as
+        `attachment.objectKey` when sending the message.
+      operationId: presignMessagingAttachment
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fileName, contentType, size]
+              properties:
+                fileName:
+                  type: string
+                  maxLength: 255
+                contentType:
+                  $ref: '#/components/schemas/MessagingAttachmentContentType'
+                size:
+                  type: integer
+                  minimum: 1
+                  maximum: 10485760
+      responses:
+        '201':
+          description: Upload URL issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [uploadUrl, objectKey, expiresAt]
+                    properties:
+                      uploadUrl:
+                        type: string
+                      objectKey:
+                        type: string
+                        example: messaging/0f8c2a3e-1b2c-4d5e-8f90-123456789abc/5d0c9f8e-7a6b-4c5d-9e8f-0a1b2c3d4e5f-lease.pdf
+                      expiresAt:
+                        type: string
+                        format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/messaging/messages/{id}:
+    delete:
+      summary: Delete one of your messages
+      description: >-
+        Soft-deletes a message (sets `deletedAt`). Only the sender may delete. If the message
+        has an attachment, the stored object is deleted immediately on a best-effort basis;
+        storage failures are logged and do not fail the request.
+      operationId: deleteMessagingMessage
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Message deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/MessagingMessage'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not the sender or not a participant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Message not found or already deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/messaging/messages/{id}/attachment:
+    get:
+      summary: Get a download URL for a message attachment
+      description: >-
+        Returns a presigned download URL that expires in at most 5 minutes (300 seconds).
+        Participants only.
+      operationId: getMessagingAttachmentDownloadUrl
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Download URL issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [downloadUrl, expiresAt, fileName, contentType, size]
+                    properties:
+                      downloadUrl:
+                        type: string
+                      expiresAt:
+                        type: string
+                        format: date-time
+                      fileName:
+                        type: string
+                      contentType:
+                        $ref: '#/components/schemas/MessagingAttachmentContentType'
+                      size:
+                        type: integer
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller is not a participant
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Message not found, deleted, or has no attachment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
   schemas:
@@ -4304,6 +4717,96 @@ components:
           type: boolean
         data:
           $ref: '#/components/schemas/ErasureRequest'
+    MessagingAttachmentContentType:
+      type: string
+      enum:
+        - image/jpeg
+        - image/png
+        - image/webp
+        - image/gif
+        - application/pdf
+
+    MessagingAttachment:
+      type: object
+      required: [objectKey, fileName, contentType, size]
+      properties:
+        objectKey:
+          type: string
+          description: Key returned by the presign endpoint for this conversation.
+        fileName:
+          type: string
+          maxLength: 255
+        contentType:
+          $ref: '#/components/schemas/MessagingAttachmentContentType'
+        size:
+          type: integer
+          minimum: 1
+          maximum: 10485760
+
+    MessagingParticipant:
+      type: object
+      required: [userId, role, joinedAt]
+      properties:
+        userId:
+          type: string
+        role:
+          type: string
+          enum: [member, admin]
+        lastReadAt:
+          type: string
+          format: date-time
+        joinedAt:
+          type: string
+          format: date-time
+
+    MessagingConversation:
+      type: object
+      required: [id, participants, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        subjectType:
+          type: string
+        subjectId:
+          type: string
+        participants:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessagingParticipant'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    MessagingMessage:
+      type: object
+      required: [id, conversationId, senderId, body, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        senderId:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        editedAt:
+          type: string
+          format: date-time
+        deletedAt:
+          type: string
+          format: date-time
+        attachment:
+          $ref: '#/components/schemas/MessagingAttachment'
+
     User:
       type: object
       required:
@@ -6000,5 +6503,7 @@ tags:
     description: Public support/contact message intake
   - name: Erasure
     description: Account erasure (NDPA/GDPR right-to-erasure) requests and admin review
+  - name: Messaging
+    description: Conversations, messages and message attachments (presigned uploads/downloads)
   - name: Governance
     description: Stake-weighted parameter governance proposals and voting (contracts/governance)
