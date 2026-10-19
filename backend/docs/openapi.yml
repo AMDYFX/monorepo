@@ -5949,6 +5949,163 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/inspector/onboarding:
+    post:
+      summary: Create or update the caller's inspector profile
+      description: |
+        Submits the caller's inspector profile. The profile is set to `pending`
+        and carries no inspector access until an admin verifies it. Service
+        areas must come from the fixed list in `config/inspectorServiceAreas.ts`.
+        Verified profiles cannot be changed here (409); suspended profiles
+        cannot re-onboard (403). (#1902)
+      operationId: submitInspectorOnboarding
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bio, serviceAreas]
+              properties:
+                bio:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+                serviceAreas:
+                  type: array
+                  minItems: 1
+                  uniqueItems: true
+                  items:
+                    type: string
+                    enum: [Lagos, Abuja, Port Harcourt, Ibadan, Kano, Enugu, Kaduna, Benin City]
+      responses:
+        '200':
+          description: Existing profile updated and reset to pending
+        '201':
+          description: Profile created in pending status
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: The inspector account is suspended
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspector/me:
+    get:
+      summary: Get the caller's inspector profile and status
+      description: Returns the caller's inspector profile. (#1902)
+      operationId: getMyInspectorProfile
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Inspector profile
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspectors:
+    get:
+      summary: List inspector profiles (admin)
+      description: Requires the `inspectors:manage` permission. (#1902)
+      operationId: listInspectorProfiles
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [pending, verified, suspended]
+      responses:
+        '200':
+          description: Inspector profiles
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspectors/{userId}/verify:
+    post:
+      summary: Verify an inspector (admin)
+      description: |
+        Requires the `inspectors:manage` permission. The inspector must have an
+        approved KYC record, otherwise the request is rejected with 409. Verifying
+        an already verified inspector is a no-op. The inspector is notified. (#1902)
+      operationId: verifyInspector
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Inspector verified
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspectors/{userId}/suspend:
+    post:
+      summary: Suspend an inspector (admin)
+      description: |
+        Requires the `inspectors:manage` permission. A suspended inspector loses
+        inspector access immediately and is notified. (#1902)
+      operationId: suspendInspector
+      tags:
+        - Inspections
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Inspector suspended
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
     UserId:

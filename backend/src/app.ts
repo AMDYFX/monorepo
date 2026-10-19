@@ -223,6 +223,10 @@ import {
   createAdminInspectionsRouter,
   createAdminInspectorsRouter,
 } from "./routes/adminInspections.js";
+import {
+  createInspectorOnboardingRouter,
+  createAdminInspectorManagementRouter,
+} from "./routes/inspectorOnboarding.js";
 import { createWhistleblowerReportsRouter } from "./routes/whistleblowerReports.js";
 import { createTenantOnboardingRouter } from "./routes/tenantOnboarding.js";
 import { createDocsRouter } from "./routes/docs.js";
@@ -982,6 +986,8 @@ export function createApp() {
     app.use("/api/listings", createListingInspectionRouter());
     app.use("/api/admin/inspections", createAdminInspectionsRouter());
     app.use("/api/admin/inspectors", createAdminInspectorsRouter());
+    app.use("/api/admin/inspectors", createAdminInspectorManagementRouter());
+    app.use("/api/inspector", createInspectorOnboardingRouter());
   }
 
   app.use("/api/v1/wallet", createWalletRouter(walletService));
@@ -1051,6 +1057,8 @@ export function createApp() {
   app.use("/api/v1/listings", createListingInspectionRouter());
   app.use("/api/v1/admin/inspections", createAdminInspectionsRouter());
   app.use("/api/v1/admin/inspectors", createAdminInspectorsRouter());
+  app.use("/api/v1/admin/inspectors", createAdminInspectorManagementRouter());
+  app.use("/api/v1/inspector", createInspectorOnboardingRouter());
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
   app.use(
