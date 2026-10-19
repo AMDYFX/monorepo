@@ -19,6 +19,7 @@ members = [
   "slashing_module",
   "schema_registry",
   "multisig_admin",
+  "tenant_reputation",
 ]
 
 [profile.release]

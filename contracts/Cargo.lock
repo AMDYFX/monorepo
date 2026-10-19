@@ -1765,6 +1765,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tenant_reputation"
+version = "0.1.0"
+dependencies = [
+ "soroban-pausable",
+ "soroban-sdk",
+ "soroban_access_control",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
