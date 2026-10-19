@@ -168,6 +168,8 @@ import { authenticateToken } from "./middleware/auth.js";
 import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
+import { createSupportMessagesRouter } from "./routes/supportMessages.js";
+import { createApartmentReviewsRouter } from "./routes/apartmentReviews.js";
 import {
   createTenantCreditScoreRouter,
   createAdminCreditScoreRouter,
@@ -561,7 +563,7 @@ export function createApp() {
   }
 
   // Register notification job handler
-  const notificationService = getNotificationService()
+  const notificationService = getNotificationService();
 
   jobScheduler.registerHandler("erasure.requested", async (job) => {
     logger.info("erasure.requested", {
@@ -875,16 +877,12 @@ export function createApp() {
 
   app.use("/api/v1/auth", authRouter);
 
-
   // In test mode, also mount routes at /api/ for backward compatibility with existing tests
   if (env.NODE_ENV === "test") {
     app.use("/api/auth", createAuthRateLimiter(env), authRouter);
     app.use("/api/conversion", createConversionRouter(conversionRateService));
     app.use("/api/user", createUserPreferencesRouter());
-    app.use(
-      "/api/user/erasure",
-      createUserErasureRouter({ ngnWalletService }),
-    );
+    app.use("/api/user/erasure", createUserErasureRouter({ ngnWalletService }));
     app.use(
       "/api/admin/erasure",
       createAdminErasureRouter({ ngnWalletService }),
@@ -1020,9 +1018,16 @@ export function createApp() {
       "/api/admin/partner-applications",
       createAdminPartnerApplicationsRouter(),
     );
-    app.use("/api/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
+    app.use(
+      "/api/landlord/payout-schedule",
+      createLandlordPayoutScheduleRouter(),
+    );
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
+    app.use("/api/support/messages", createSupportMessagesRouter());
+    app.use("/api/admin/support/messages", createSupportMessagesRouter());
+    app.use("/api/apartment-reviews", createApartmentReviewsRouter());
+    app.use("/api/admin/apartment-reviews", createApartmentReviewsRouter());
     app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
     app.use("/api/tenant/data-export", createTenantDataExportRouter());
     app.use("/api/admin/credit-score", createAdminCreditScoreRouter());
@@ -1143,10 +1148,17 @@ export function createApp() {
     "/api/v1/admin/partner-applications",
     createAdminPartnerApplicationsRouter(),
   );
-  app.use("/api/v1/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
+  app.use(
+    "/api/v1/landlord/payout-schedule",
+    createLandlordPayoutScheduleRouter(),
+  );
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
+  app.use("/api/v1/support/messages", createSupportMessagesRouter());
+  app.use("/api/v1/admin/support/messages", createSupportMessagesRouter());
+  app.use("/api/v1/apartment-reviews", createApartmentReviewsRouter());
+  app.use("/api/v1/admin/apartment-reviews", createApartmentReviewsRouter());
   app.use("/api/v1/tenant/credit-score", createTenantCreditScoreRouter());
   app.use("/api/v1/tenant/data-export", createTenantDataExportRouter());
   app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());
