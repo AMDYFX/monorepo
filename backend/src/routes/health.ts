@@ -4,6 +4,7 @@ import { getPool, getPoolMetrics } from "../db.js"
 import { getMetricsSnapshot } from "../utils/appMetrics.js"
 import { SorobanAdapter } from "../soroban/adapter.js"
 import { CircuitBreakerAdapter } from "../soroban/circuit-breaker-adapter.js"
+import { getStubbedIntegrations } from "../config/productionIntegrations.js"
 
 interface HealthDetailsPayloadInput {
   version: string
@@ -56,6 +57,8 @@ export function createHealthRouter(adapter: SorobanAdapter): Router {
       dbLatencyMs,
       memoryUsageMb: Math.round(memory.heapUsed / 1024 / 1024),
       requestId: req.requestId,
+      // Integrations running on a stub or mock, including opted-out ones (#1942).
+      stubbedIntegrations: getStubbedIntegrations(process.env).map((integration) => integration.name),
     })
   })
 

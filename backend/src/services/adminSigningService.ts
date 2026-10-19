@@ -47,6 +47,9 @@ export type AdminOperation =
   // admin key only pays the fee and submits; it authorizes nothing user-specific.
   | 'finalize_proposal'
   | 'execute_proposal'
+  // vesting_schedule contract (#1911). Admin-funded schedules and revocation.
+  | 'create_vesting_schedule'
+  | 'revoke'
 
 /**
  * Parameters for admin operations
@@ -195,6 +198,8 @@ export class AdminSigningService {
       'claim_commission',
       'finalize_proposal',
       'execute_proposal',
+      'create_vesting_schedule',
+      'revoke',
     ]
     if (!allowedOperations.includes(params.operation)) {
       throw new ConfigurationError(

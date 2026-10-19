@@ -169,6 +169,25 @@ import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
 import {
+  createLandlordTenantRatingRouter,
+  createTenantRatingCardRouter,
+  createPublicRatingCardRouter,
+} from "./routes/tenantRatingCard.js";
+import {
+  PostgresTenantRatingStore,
+  initTenantRatingStore,
+} from "./models/tenantRatingStore.js";
+import {
+  createInspectorJobsRouter,
+  createAdminInspectionJobsRouter,
+} from "./routes/inspectionJobs.js";
+import {
+  PostgresInspectionJobStore,
+  initInspectionJobStore,
+} from "./models/inspectionJobStore.js";
+import { createSupportMessagesRouter } from "./routes/supportMessages.js";
+import { createApartmentReviewsRouter } from "./routes/apartmentReviews.js";
+import {
   createTenantCreditScoreRouter,
   createAdminCreditScoreRouter,
 } from "./routes/tenantCreditScore.js";
@@ -176,6 +195,12 @@ import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
 import { createTenantLeaseRouter } from "./routes/tenantLease.js";
 import { createLandlordAnalyticsRouter } from "./routes/landlordAnalytics.js";
 import { createFullPaymentRouter } from "./routes/fullPayment.js";
+import { createTenantSavedPropertiesRouter } from "./routes/tenantSavedProperties.js";
+import { createVestingRouter, createAdminVestingRouter } from "./routes/vesting.js";
+import {
+  PostgresSavedPropertyStore,
+  initSavedPropertyStore,
+} from "./models/savedPropertyStore.js";
 import { createMessagingRouter } from "./routes/messaging.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
 import { createNotificationsRouter } from "./routes/notifications.js";
@@ -564,7 +589,7 @@ export function createApp() {
   }
 
   // Register notification job handler
-  const notificationService = getNotificationService()
+  const notificationService = getNotificationService();
 
   jobScheduler.registerHandler("erasure.requested", async (job) => {
     logger.info("erasure.requested", {
@@ -634,8 +659,7 @@ export function createApp() {
   // Tenant Application Store — swap to Postgres when DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
-    // Account freezes must survive restarts and apply across instances (#1948)
-    initUserRiskStateStore(new PostgresUserRiskStateStore());
+    initSavedPropertyStore(new PostgresSavedPropertyStore());
     initLandlordPayoutScheduleStore(new PostgresLandlordPayoutScheduleStore());
     initTenantDataExportStore(new PostgresTenantDataExportStore());
     initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
@@ -655,6 +679,8 @@ export function createApp() {
     initRentGuaranteeStore(new PostgresRentGuaranteeStore());
     initPropertyInspectionStore(new PostgresPropertyInspectionStore());
     initInspectorProfileStore(new PostgresInspectorProfileStore());
+    initTenantRatingStore(new PostgresTenantRatingStore());
+    initInspectionJobStore(new PostgresInspectionJobStore());
   }
 
   // Indexer
@@ -878,16 +904,12 @@ export function createApp() {
 
   app.use("/api/v1/auth", authRouter);
 
-
   // In test mode, also mount routes at /api/ for backward compatibility with existing tests
   if (env.NODE_ENV === "test") {
     app.use("/api/auth", createAuthRateLimiter(env), authRouter);
     app.use("/api/conversion", createConversionRouter(conversionRateService));
     app.use("/api/user", createUserPreferencesRouter());
-    app.use(
-      "/api/user/erasure",
-      createUserErasureRouter({ ngnWalletService }),
-    );
+    app.use("/api/user/erasure", createUserErasureRouter({ ngnWalletService }));
     app.use(
       "/api/admin/erasure",
       createAdminErasureRouter({ ngnWalletService }),
@@ -1023,12 +1045,18 @@ export function createApp() {
       "/api/admin/partner-applications",
       createAdminPartnerApplicationsRouter(),
     );
-    app.use("/api/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
+    app.use(
+      "/api/landlord/payout-schedule",
+      createLandlordPayoutScheduleRouter(),
+    );
     app.use("/api", createLandlordAnalyticsRouter());
     app.use("/api/payments", createFullPaymentRouter());
     app.use("/api", createTenantLeaseRouter());
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
+    app.use("/api/tenant/saved-properties", createTenantSavedPropertiesRouter());
+    app.use("/api/vesting", createVestingRouter(sorobanAdapter, linkedAddressStore));
+    app.use("/api/admin/vesting", createAdminVestingRouter(sorobanAdapter));
     app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
     app.use("/api/tenant/data-export", createTenantDataExportRouter());
     app.use("/api/admin/credit-score", createAdminCreditScoreRouter());
@@ -1049,6 +1077,11 @@ export function createApp() {
     app.use("/api/admin/inspectors", createAdminInspectorsRouter());
     app.use("/api/admin/inspectors", createAdminInspectorManagementRouter());
     app.use("/api/inspector", createInspectorOnboardingRouter());
+    app.use("/api/inspector/jobs", createInspectorJobsRouter());
+    app.use("/api/admin/inspector/jobs", createAdminInspectionJobsRouter());
+    app.use("/api/deals", createLandlordTenantRatingRouter());
+    app.use("/api/tenant/rating-card", createTenantRatingCardRouter());
+    app.use("/api/public/rating-card", createPublicRatingCardRouter());
   }
 
   app.use("/api/v1/wallet", createWalletRouter(walletService));
@@ -1092,6 +1125,7 @@ export function createApp() {
   app.use("/api/v1/admin/users", createAdminUserSessionsRouter());
   app.use("/api/v1", createRentGuaranteeRouter());
   app.use("/api/v1/deals", createDealsRouter());
+  app.use("/api/v1/deals", createLandlordTenantRatingRouter());
   app.use("/api/v1", createLeaseAgreementsRouter());
   app.use("/api/v1/whistleblower", createWhistleblowerRouter(earningsService));
   app.use(
@@ -1120,6 +1154,8 @@ export function createApp() {
   app.use("/api/v1/admin/inspectors", createAdminInspectorsRouter());
   app.use("/api/v1/admin/inspectors", createAdminInspectorManagementRouter());
   app.use("/api/v1/inspector", createInspectorOnboardingRouter());
+  app.use("/api/v1/inspector/jobs", createInspectorJobsRouter());
+  app.use("/api/v1/admin/inspector/jobs", createAdminInspectionJobsRouter());
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
   app.use(
@@ -1149,17 +1185,25 @@ export function createApp() {
     "/api/v1/admin/partner-applications",
     createAdminPartnerApplicationsRouter(),
   );
-  app.use("/api/v1/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
+  app.use(
+    "/api/v1/landlord/payout-schedule",
+    createLandlordPayoutScheduleRouter(),
+  );
   app.use("/api/v1", createLandlordAnalyticsRouter());
   app.use("/api/v1/payments", createFullPaymentRouter());
   app.use("/api/v1", createTenantLeaseRouter());
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
+  app.use("/api/v1/tenant/saved-properties", createTenantSavedPropertiesRouter());
+  app.use("/api/v1/vesting", createVestingRouter(sorobanAdapter, linkedAddressStore));
+  app.use("/api/v1/admin/vesting", createAdminVestingRouter(sorobanAdapter));
   app.use("/api/v1/tenant/credit-score", createTenantCreditScoreRouter());
   app.use("/api/v1/tenant/data-export", createTenantDataExportRouter());
   app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());
   app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
+  app.use("/api/v1/tenant/rating-card", createTenantRatingCardRouter());
+  app.use("/api/v1/public/rating-card", createPublicRatingCardRouter());
   app.use("/api/v1/messaging", createMessagingRouter());
   app.use(
     "/api/v1/whistleblower/applications",
@@ -1173,6 +1217,8 @@ export function createApp() {
   app.use("/api/kyc", createKycRouter());
   app.use("/api/tenant/onboarding", createTenantOnboardingRouter());
   app.use("/api/listings", createListingsRouter());
+  app.use("/api/support/messages", createSupportMessagesRouter());
+  app.use("/api/admin/support/messages", createSupportMessagesRouter());
   app.use("/api", listingApplicationsRouter);
   app.use("/api/webhooks/kyc", createKycWebhookRouter());
   app.use("/api/onboarding", createOnboardingRouter());

@@ -20,6 +20,10 @@ members = [
   "schema_registry",
   "multisig_admin",
   "tenant_reputation",
+  "vesting_schedule",
+  "governance",
+  "oracle_price_feeds",
+  "allowlist_registry",
 ]
 
 [profile.release]
