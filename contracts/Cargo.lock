@@ -921,6 +921,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "multisig_admin"
+version = "0.1.0"
+dependencies = [
+ "soroban-pausable",
+ "soroban-sdk",
+ "soroban_access_control",
+]
+
+[[package]]
 name = "mvp-staking-pool"
 version = "0.1.0"
 dependencies = [
@@ -1257,6 +1266,15 @@ dependencies = [
  "quick-error",
  "tempfile",
  "wait-timeout",
+]
+
+[[package]]
+name = "schema_registry"
+version = "0.1.0"
+dependencies = [
+ "soroban-pausable",
+ "soroban-sdk",
+ "soroban_access_control",
 ]
 
 [[package]]
