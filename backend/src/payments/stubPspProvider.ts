@@ -11,6 +11,7 @@ import type {
   MapStatusInput,
   ParseWebhookResult,
   PaymentProvider,
+  VerifyPayoutResult,
 } from './types.js'
 
 export class StubPspProvider implements PaymentProvider {
@@ -112,6 +113,11 @@ export class StubPspProvider implements PaymentProvider {
       externalRef,
       status: 'confirmed',
     }
+  }
+
+  async verifyPayout(_input: { internalRef: string }): Promise<VerifyPayoutResult> {
+    // The stub's executePayout always confirms, so its status lookup agrees
+    return { status: 'confirmed' }
   }
 
   async resolveBankAccount(

@@ -24,6 +24,8 @@ export class NgnWalletService {
   private withdrawalUserIds: Map<string, string> = new Map()
   private bankAccountsByRef: Map<string, { accountNumber: string; accountName: string; bankName: string }> = new Map()
   private creditedDeposits = new Set<string>()
+  // When each withdrawal was claimed for payout, used to find stuck payouts
+  private payoutStartedAt: Map<string, number> = new Map()
 
   constructor() {
     this.initializeDemoData()
@@ -53,43 +55,11 @@ export class NgnWalletService {
   }
 
   private async getOrCreateWallet(userId: string) {
+    // New wallets start empty. Funds must come from a real ledger event
+    // (top-up, adjustment) — never from seeded data.
     let wallet = await ngnWalletStore.getWalletByUserId(userId)
     if (!wallet) {
       wallet = await ngnWalletStore.createWallet(userId)
-      // For MVP matching old behavior, give some default funds to keep tests passing
-      // In production this would be empty
-      await ngnWalletStore.createLedgerEntry({
-        walletId: wallet.walletId,
-        type: 'TOPUP_CONFIRMED',
-        amountNgn: 55000,
-        referenceType: 'demo',
-        referenceId: 'DEMO-INIT'
-      })
-      await ngnWalletStore.createLedgerEntry({
-        walletId: wallet.walletId,
-        type: 'STAKE_RESERVE',
-        amountNgn: -5000,
-        referenceType: 'demo',
-        referenceId: 'DEMO-HELD'
-      })
-
-      // Add a demo withdrawal for testing history
-      const demoWd: WithdrawalResponse = {
-        id: `wd-demo-${userId}`,
-        amountNgn: 2000,
-        status: 'confirmed',
-        bankAccount: {
-          accountNumber: '1234567890',
-          accountName: 'Demo User',
-          bankName: 'Demo Bank'
-        },
-        reference: `REF-DEMO-${userId}`,
-        createdAt: new Date().toISOString(),
-        processedAt: new Date().toISOString(),
-        failureReason: null
-      }
-      this.withdrawals.push(demoWd)
-      this.withdrawalUserIds.set(demoWd.id, userId)
     }
     return wallet
   }
@@ -554,12 +524,119 @@ export class NgnWalletService {
     return { items: results, nextCursor }
   }
 
+  /**
+   * Approval only queues the payout. No money has moved yet, so the withdrawal
+   * is not confirmed here. The payout worker sends the transfer and then
+   * confirms or fails it (see claimForPayout / completePayout / failPayout).
+   */
   async approveWithdrawal(withdrawalId: string): Promise<WithdrawalResponse> {
     const withdrawal = this.withdrawals.find(w => w.id === withdrawalId)
     if (!withdrawal) throw new AppError(ErrorCode.NOT_FOUND, 404, 'Withdrawal not found')
-    withdrawal.status = 'approved'
-    // In demo mode, we just auto confirm it
-    return this.confirmWithdrawal(withdrawalId)
+    if (withdrawal.status === 'pending') {
+      withdrawal.status = 'approved'
+    }
+    return withdrawal
+  }
+
+  getWithdrawal(withdrawalId: string): WithdrawalResponse | undefined {
+    return this.withdrawals.find(w => w.id === withdrawalId)
+  }
+
+  getWithdrawalUserId(withdrawalId: string): string | undefined {
+    return this.withdrawalUserIds.get(withdrawalId)
+  }
+
+  listWithdrawalsByStatus(status: WithdrawalResponse['status']): WithdrawalResponse[] {
+    return this.withdrawals.filter(w => w.status === status)
+  }
+
+  getPayoutStartedAt(withdrawalId: string): number | undefined {
+    return this.payoutStartedAt.get(withdrawalId)
+  }
+
+  /**
+   * Moves an approved withdrawal to 'processing' so one caller owns the payout.
+   * Returns null if it is not approved (already claimed, or not approved at all).
+   * The check and the write have no await between them, so they are atomic in-process.
+   */
+  claimForPayout(withdrawalId: string): WithdrawalResponse | null {
+    const withdrawal = this.withdrawals.find(w => w.id === withdrawalId)
+    if (!withdrawal || withdrawal.status !== 'approved') return null
+    withdrawal.status = 'processing'
+    this.payoutStartedAt.set(withdrawalId, Date.now())
+    return withdrawal
+  }
+
+  /**
+   * Records a successful PSP transfer: writes WITHDRAWAL_CONFIRMED and sets
+   * 'confirmed'. A withdrawal that is not 'processing' is returned unchanged,
+   * so a duplicate PSP webhook cannot confirm it twice.
+   */
+  async completePayout(withdrawalId: string): Promise<WithdrawalResponse> {
+    const withdrawal = this.withdrawals.find(w => w.id === withdrawalId)
+    if (!withdrawal) throw new AppError(ErrorCode.NOT_FOUND, 404, 'Withdrawal not found')
+    if (withdrawal.status !== 'processing') return withdrawal
+
+    // Claim the transition synchronously so a concurrent caller returns above
+    withdrawal.status = 'confirmed'
+    const userId = this.withdrawalUserIds.get(withdrawalId)!
+    try {
+      const wallet = await this.getOrCreateWallet(userId)
+      const release = await ngnWalletStore.acquireLock(wallet.walletId)
+      try {
+        await ngnWalletStore.createLedgerEntry({
+          walletId: wallet.walletId,
+          type: 'WITHDRAWAL_CONFIRMED',
+          amountNgn: -withdrawal.amountNgn,
+          referenceType: 'withdrawal',
+          referenceId: withdrawalId
+        })
+      } finally {
+        await release()
+      }
+    } catch (error) {
+      withdrawal.status = 'processing'
+      throw error
+    }
+    this.payoutStartedAt.delete(withdrawalId)
+    withdrawal.processedAt = new Date().toISOString()
+    return withdrawal
+  }
+
+  /**
+   * Records a failed PSP transfer: writes WITHDRAWAL_FAILED, which releases the
+   * held funds back to available, and sets 'failed'. Ignored unless 'processing'.
+   */
+  async failPayout(withdrawalId: string, reason: string): Promise<WithdrawalResponse> {
+    const withdrawal = this.withdrawals.find(w => w.id === withdrawalId)
+    if (!withdrawal) throw new AppError(ErrorCode.NOT_FOUND, 404, 'Withdrawal not found')
+    if (withdrawal.status !== 'processing') return withdrawal
+
+    withdrawal.status = 'failed'
+    withdrawal.failureReason = reason
+    const userId = this.withdrawalUserIds.get(withdrawalId)!
+    try {
+      const wallet = await this.getOrCreateWallet(userId)
+      const release = await ngnWalletStore.acquireLock(wallet.walletId)
+      try {
+        await ngnWalletStore.createLedgerEntry({
+          walletId: wallet.walletId,
+          type: 'WITHDRAWAL_FAILED',
+          amountNgn: withdrawal.amountNgn,
+          referenceType: 'withdrawal',
+          referenceId: withdrawalId
+        })
+      } finally {
+        await release()
+      }
+    } catch (error) {
+      withdrawal.status = 'processing'
+      withdrawal.failureReason = null
+      throw error
+    }
+    this.payoutStartedAt.delete(withdrawalId)
+    withdrawal.processedAt = new Date().toISOString()
+    return withdrawal
   }
 
   async rejectWithdrawal(withdrawalId: string, reason: string): Promise<WithdrawalResponse> {

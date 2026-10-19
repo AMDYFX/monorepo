@@ -1,3 +1,5 @@
+import { newIdempotencyKey } from './idempotencyKey'
+
 export type OfflineQueueMethod = 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 
 export interface OfflineQueueEntry {
@@ -128,11 +130,19 @@ export function getOfflineQueueFailures() {
 export function enqueueOfflineRequest(
   entry: Omit<OfflineQueueEntry, 'id' | 'createdAt' | 'retryCount'>,
 ) {
-  const existingIdempotencyKey =
-    entry.headers['Idempotency-Key'] ?? entry.headers['idempotency-key']
-  const idempotencyKey =
-    existingIdempotencyKey ??
-    `idem_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
+  // Keep one key per queued action. Headers from apiFetch arrive lowercased,
+  // so drop any casing of the key before writing it back, or replay would send
+  // the header twice.
+  const headers: Record<string, string> = {}
+  let existingIdempotencyKey: string | undefined
+  for (const [name, value] of Object.entries(entry.headers)) {
+    if (name.toLowerCase() === 'idempotency-key') {
+      existingIdempotencyKey = value
+    } else {
+      headers[name] = value
+    }
+  }
+  const idempotencyKey = existingIdempotencyKey ?? newIdempotencyKey()
 
   const entries = readQueue()
   entries.push({
@@ -141,7 +151,7 @@ export function enqueueOfflineRequest(
       .toString(36)
       .slice(2, 8)}`,
     headers: {
-      ...entry.headers,
+      ...headers,
       'Idempotency-Key': idempotencyKey,
     },
     createdAt: new Date().toISOString(),

@@ -5,6 +5,7 @@ import { createAdminWithdrawalsRouter } from './adminWithdrawals.js'
 import { NgnWalletService } from '../services/ngnWalletService.js'
 import { sessionStore, userStore } from '../models/authStore.js'
 import { errorHandler } from '../middleware/errorHandler.js'
+import { seedNgnWalletFixture } from '../test-fixtures/ngnWalletFixtures.js'
 
 import { getPool } from '../db.js'
 
@@ -46,6 +47,7 @@ describe('Admin Withdrawals Routes', () => {
 
   it('should approve a pending withdrawal idempotently', async () => {
     const user = await userStore.getOrCreateByEmail('user1@test.com')
+    await seedNgnWalletFixture(user.id)
 
     const initiated = await ngnWalletService.initiateWithdrawal(user.id, {
       amountNgn: 1000,
@@ -62,18 +64,19 @@ describe('Admin Withdrawals Routes', () => {
       .expect(200)
 
     expect(first.body.success).toBe(true)
-    expect(first.body.status).toBe('confirmed')
+    expect(first.body.status).toBe('approved')
 
     const second = await request(app)
       .post(`/api/admin/withdrawals/${initiated.id}/approve`)
       .set('Authorization', `Bearer ${authToken}`)
       .expect(200)
 
-    expect(second.body.status).toBe('confirmed')
+    expect(second.body.status).toBe('approved')
   })
 
   it('should reject a pending withdrawal idempotently', async () => {
     const user = await userStore.getOrCreateByEmail('user2@test.com')
+    await seedNgnWalletFixture(user.id)
 
     const initiated = await ngnWalletService.initiateWithdrawal(user.id, {
       amountNgn: 1000,

@@ -18,6 +18,7 @@ import { outboxStore, OutboxSender, TxType } from "../outbox/index.js";
 import { createSorobanAdapter } from "../soroban/index.js";
 import { getSorobanConfigFromEnv } from "../soroban/client.js";
 import { NgnWalletService } from "../services/ngnWalletService.js";
+import { withdrawalIdFromPayoutReference } from "../jobs/withdrawalPayoutWorker.js";
 import { getPaymentProvider } from "../payments/index.js";
 import { requireValidWebhookSignature } from "../payments/webhookSignature.js";
 import {
@@ -354,6 +355,71 @@ export function createWebhooksRouter(ngnWalletService: NgnWalletService) {
             message,
           );
         }
+        next(error);
+      }
+    },
+  );
+
+  /**
+   * POST /api/webhooks/payouts/:rail
+   * PSP result for a withdrawal payout. Signature-checked and deduplicated by
+   * provider event id. externalRef must be the payout reference we sent
+   * (payout-<withdrawalId>). A replay after the payout has settled changes nothing.
+   */
+  router.post(
+    "/payouts/:rail",
+    (req: Request, res: Response, next: NextFunction) => {
+      const rail = String(req.params.rail);
+      if (rail === "paystack") return verifyPaystackSignature(req, res, next);
+      if (rail === "flutterwave") return verifyFlutterwaveSignature(req, res, next);
+      next();
+    },
+    async (req: Request, res: Response, next: NextFunction) => {
+      try {
+        const rail = String(req.params.rail);
+        const provider = getPaymentProvider(rail);
+        const parsed = await provider.parseAndValidateWebhook(req);
+
+        const claim = await webhookEventDedupeStore.tryClaim({
+          rail: `payout:${rail}`,
+          providerEventId: parsed.providerEventId,
+          payloadHash: jsonPayloadSha256Hex(req.body),
+        });
+        if (claim === "duplicate") {
+          recordKPI("webhookEventDeduped");
+          return res
+            .status(200)
+            .json({ success: true, deduped: true, providerEventId: parsed.providerEventId });
+        }
+
+        const withdrawalId = withdrawalIdFromPayoutReference(parsed.externalRef);
+        if (!withdrawalId || !ngnWalletService.getWithdrawal(withdrawalId)) {
+          throw new AppError(ErrorCode.NOT_FOUND, 404, "Withdrawal not found");
+        }
+
+        const internalStatus = provider.mapStatus({
+          rawStatus: parsed.rawStatus,
+          providerStatus: parsed.providerStatus,
+        });
+        if (internalStatus === "confirmed") {
+          await ngnWalletService.completePayout(withdrawalId);
+        } else if (internalStatus === "failed") {
+          await ngnWalletService.failPayout(
+            withdrawalId,
+            parsed.providerStatus ?? "Transfer failed at provider",
+          );
+        } else {
+          logger.info("Payout webhook ignored: non-terminal status", {
+            withdrawalId,
+            rawStatus: parsed.rawStatus,
+            requestId: req.requestId,
+          });
+        }
+
+        return res
+          .status(200)
+          .json({ success: true, providerEventId: parsed.providerEventId });
+      } catch (error) {
         next(error);
       }
     },

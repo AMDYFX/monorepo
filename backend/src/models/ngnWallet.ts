@@ -55,6 +55,7 @@ export interface NgnWalletStore {
 
     createLedgerEntry(entry: Omit<LedgerEntry, 'entryId' | 'createdAt'>): Promise<LedgerEntry>
     getLedgerEntriesByWalletId(walletId: string): Promise<LedgerEntry[]>
+    listLedgerEntriesByReferenceType(referenceType: string): Promise<LedgerEntry[]>
     listWallets(options?: { limit?: number; cursor?: string }): Promise<{ items: NgnWallet[]; nextCursor: string | null }>
     // Concurrency control
     acquireLock(walletId: string): Promise<() => Promise<void>>

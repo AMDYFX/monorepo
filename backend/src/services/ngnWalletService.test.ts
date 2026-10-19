@@ -7,6 +7,7 @@ import { userRiskStateStore } from '../models/userRiskStateStore.js'
 import { outboxStore } from '../outbox/index.js'
 import { AppError } from '../errors/AppError.js'
 import { ErrorCode } from '../errors/errorCodes.js'
+import { seedNgnWalletFixture } from '../test-fixtures/ngnWalletFixtures.js'
 
 describe('NgnWalletService - General-purpose balance, ledger, and withdrawal logic', () => {
   let service: NgnWalletService
@@ -18,13 +19,26 @@ describe('NgnWalletService - General-purpose balance, ledger, and withdrawal log
     userRiskStateStore.clear()
     await depositStore.clear()
     await outboxStore.clear()
+    await seedNgnWalletFixture(userId)
   })
 
   describe('Balance initialization and calculation', () => {
-    it('initializes wallet with demo funds and calculates default balance correctly', async () => {
+    it('starts new wallets with zero balance and no ledger entries', async () => {
+      const freshUserId = 'user-fresh-1'
+      const balance = await service.getBalance(freshUserId)
+
+      expect(balance.availableNgn).toBe(0)
+      expect(balance.heldNgn).toBe(0)
+      expect(balance.totalNgn).toBe(0)
+
+      const ledger = await service.getLedger(freshUserId)
+      expect(ledger.entries).toHaveLength(0)
+    })
+
+    it('calculates balance from explicit fixture funds', async () => {
       const balance = await service.getBalance(userId)
 
-      // Demo init creates 55,000 TOPUP_CONFIRMED and -5,000 STAKE_RESERVE
+      // Fixture creates 55,000 TOPUP_CONFIRMED and -5,000 STAKE_RESERVE
       expect(balance.availableNgn).toBe(50000)
       expect(balance.heldNgn).toBe(5000)
       expect(balance.totalNgn).toBe(55000)
@@ -331,14 +345,19 @@ describe('NgnWalletService - General-purpose balance, ledger, and withdrawal log
       expect(balance.totalNgn).toBe(55000)
     })
 
-    it('approves withdrawal via approveWithdrawal helper', async () => {
+    it('approval queues the payout without confirming it or moving money', async () => {
       const withdrawal = await service.initiateWithdrawal(userId, {
         amountNgn: 5000,
         bankAccountRef: 'ba-demo-1',
       })
 
       const approved = await service.approveWithdrawal(withdrawal.id)
-      expect(approved.status).toBe('confirmed')
+      expect(approved.status).toBe('approved')
+      expect(approved.processedAt).toBeNull()
+
+      // Funds stay held until the payout worker settles the transfer
+      const balance = await service.getBalance(userId)
+      expect(balance.heldNgn).toBe(10000)
     })
 
     it('rejects withdrawal via rejectWithdrawal helper', async () => {
