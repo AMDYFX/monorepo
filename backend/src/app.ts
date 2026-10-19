@@ -169,6 +169,12 @@ import {
   createAdminCreditScoreRouter,
 } from "./routes/tenantCreditScore.js";
 import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
+import { createTenantSavedPropertiesRouter } from "./routes/tenantSavedProperties.js";
+import { createVestingRouter, createAdminVestingRouter } from "./routes/vesting.js";
+import {
+  PostgresSavedPropertyStore,
+  initSavedPropertyStore,
+} from "./models/savedPropertyStore.js";
 import { createMessagingRouter } from "./routes/messaging.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
 import { createNotificationsRouter } from "./routes/notifications.js";
@@ -602,6 +608,7 @@ export function createApp() {
   // Tenant Application Store — swap to Postgres when DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
+    initSavedPropertyStore(new PostgresSavedPropertyStore());
     initLandlordPayoutScheduleStore(new PostgresLandlordPayoutScheduleStore());
     initTenantDataExportStore(new PostgresTenantDataExportStore());
     initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
@@ -992,6 +999,9 @@ export function createApp() {
     app.use("/api/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
+    app.use("/api/tenant/saved-properties", createTenantSavedPropertiesRouter());
+    app.use("/api/vesting", createVestingRouter(sorobanAdapter, linkedAddressStore));
+    app.use("/api/admin/vesting", createAdminVestingRouter(sorobanAdapter));
     app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
     app.use("/api/tenant/data-export", createTenantDataExportRouter());
     app.use("/api/admin/credit-score", createAdminCreditScoreRouter());
@@ -1116,6 +1126,9 @@ export function createApp() {
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
+  app.use("/api/v1/tenant/saved-properties", createTenantSavedPropertiesRouter());
+  app.use("/api/v1/vesting", createVestingRouter(sorobanAdapter, linkedAddressStore));
+  app.use("/api/v1/admin/vesting", createAdminVestingRouter(sorobanAdapter));
   app.use("/api/v1/tenant/credit-score", createTenantCreditScoreRouter());
   app.use("/api/v1/tenant/data-export", createTenantDataExportRouter());
   app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());

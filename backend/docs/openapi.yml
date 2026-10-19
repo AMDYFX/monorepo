@@ -6263,6 +6263,314 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/tenant/saved-properties:
+    get:
+      summary: List the caller's saved properties
+      description: |
+        Returns the listing ids the caller has saved, most recently saved first.
+        Each user sees only their own list. (#1889)
+      operationId: listSavedProperties
+      tags:
+        - Tenant
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Saved listing ids
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items: { type: string }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/saved-properties/{listingId}:
+    parameters:
+      - name: listingId
+        in: path
+        required: true
+        description: Listing id (UUID)
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Save a property
+      description: |
+        Saves a listing to the caller's list. Saving a listing that is already
+        saved returns the same result and changes nothing. Returns 404 if the
+        listing does not exist. (#1889)
+      operationId: saveProperty
+      tags:
+        - Tenant
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Listing saved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      listingId: { type: string }
+                      saved: { type: boolean, enum: [true] }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Remove a saved property
+      description: |
+        Removes a listing from the caller's list. Removing a listing that is not
+        saved is not an error, and a listing that has since been removed from the
+        catalogue can still be unsaved. (#1889)
+      operationId: unsaveProperty
+      tags:
+        - Tenant
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Listing removed from saved properties
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      listingId: { type: string }
+                      saved: { type: boolean, enum: [false] }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/vesting/me:
+    get:
+      summary: Get the caller's vesting schedule and claimable amount
+      description: |
+        Returns the vesting schedule for the wallet linked to the caller, and the
+        amount that has vested but not yet been claimed. Amounts are decimal strings
+        in token base units. `schedule` is null when the wallet has no schedule. (#1911)
+      operationId: getMyVesting
+      tags:
+        - Vesting
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Vesting state for the linked wallet
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      beneficiary: { type: string }
+                      schedule:
+                        nullable: true
+                        allOf:
+                          - $ref: '#/components/schemas/VestingSchedule'
+                      claimable: { type: string }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/vesting/claim/prepare:
+    post:
+      summary: Prepare the caller's vesting claim as an unsigned transaction
+      description: |
+        Builds and simulates a `claim` transaction for the linked wallet. The
+        caller signs the returned XDR in their wallet and submits it to
+        `/api/v1/vesting/claim/submit`. Returns 400 when nothing has vested. (#1911)
+      operationId: prepareVestingClaim
+      tags:
+        - Vesting
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Unsigned claim transaction
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      xdr: { type: string, description: Base64 transaction envelope }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/vesting/claim/submit:
+    post:
+      summary: Submit a wallet-signed vesting claim
+      description: |
+        Accepts only a single `claim` call on the vesting contract for the caller's
+        linked wallet. Any other transaction is rejected with 400. Returns the
+        transaction hash once the network accepts the transaction. (#1911)
+      operationId: submitVestingClaim
+      tags:
+        - Vesting
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signedXdr]
+              properties:
+                signedXdr: { type: string, description: Base64 signed transaction envelope }
+      responses:
+        '200':
+          description: Claim submitted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      txHash: { type: string }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/vesting:
+    post:
+      summary: Create a vesting schedule
+      description: |
+        Transfers `totalAmount` from the admin account into the vesting contract for
+        the beneficiary. Requires `vesting:manage`. Times are unix seconds and must
+        satisfy `startTime < endTime` and `startTime <= cliffTime <= endTime`. (#1911)
+      operationId: createVestingSchedule
+      tags:
+        - Vesting
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [beneficiary, totalAmount, startTime, cliffTime, endTime, revocable]
+              properties:
+                beneficiary: { type: string, description: Stellar account address (G...) }
+                totalAmount: { type: string, description: Positive integer in token base units }
+                startTime: { type: integer }
+                cliffTime: { type: integer }
+                endTime: { type: integer }
+                revocable: { type: boolean }
+      responses:
+        '201':
+          description: Schedule created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      beneficiary: { type: string }
+                      txHash: { type: string }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/vesting/{beneficiary}/revoke:
+    post:
+      summary: Revoke a revocable vesting schedule
+      description: |
+        The beneficiary receives the vested amount they have not yet claimed, and the
+        admin receives the unvested remainder. The schedule then stops vesting.
+        Requires `vesting:manage`. (#1911)
+      operationId: revokeVestingSchedule
+      tags:
+        - Vesting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: beneficiary
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Schedule revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      beneficiary: { type: string }
+                      txHash: { type: string }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/v1/tenant/data-export:
     post:
       summary: Request a copy of the caller's personal data
@@ -6367,6 +6675,18 @@ components:
         type: string
         format: uuid
   schemas:
+    VestingSchedule:
+      type: object
+      description: A beneficiary's vesting allocation. Amounts are decimal strings in token base units.
+      properties:
+        totalAmount: { type: string }
+        claimedAmount: { type: string }
+        startTime: { type: integer, description: Unix seconds }
+        cliffTime: { type: integer, description: Unix seconds }
+        endTime: { type: integer, description: Unix seconds }
+        revocable: { type: boolean }
+        revoked: { type: boolean }
+
     TenantDataExportStatus:
       type: object
       description: Status of a tenant personal-data export request (#1899)
