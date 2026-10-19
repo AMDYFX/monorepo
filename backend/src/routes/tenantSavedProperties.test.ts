@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import request from 'supertest'
 import express from 'express'
-import { randomUUID } from 'node:crypto'
 
 const mocks = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -45,7 +44,7 @@ describe('Tenant saved properties (#1889)', () => {
     mocks.getById.mockResolvedValue({ listingId: 'exists' })
 
     app = buildApp()
-    listingId = randomUUID()
+    listingId = globalThis.crypto.randomUUID()
 
     const tenant = await userStore.getOrCreateByEmail('saved-tenant@example.com')
     tenantToken = 'test-token-saved-tenant'
