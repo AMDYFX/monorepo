@@ -20,7 +20,7 @@ export interface VerifyOtpResponse {
     id: string;
     email: string;
     name: string;
-    role: "tenant" | "landlord" | "agent";
+    role: "tenant" | "landlord" | "inspector" | "admin" | "agent" | "user" | "super_admin";
   };
 }
 
@@ -44,7 +44,7 @@ export interface WalletVerifyResponse {
     id: string;
     email: string;
     name: string;
-    role: "tenant" | "landlord" | "agent";
+    role: "tenant" | "landlord" | "inspector" | "admin" | "agent" | "user" | "super_admin";
     walletAddress?: string;
   };
 }

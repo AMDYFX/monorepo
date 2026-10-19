@@ -12,6 +12,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { otpSchema, type OtpFormValues } from "@/lib/formSchemas";
 import { parseFormError } from "@/lib/formErrors";
+import useAuthStore from "@/store/useAuthStore";
 
 function VerifyOtpForm() {
   const router = useRouter();
@@ -41,6 +42,7 @@ function VerifyOtpForm() {
 
     try {
       const res = await verifyOtp(email, data.otp);
+      useAuthStore.getState().setUser(res.user);
 
       if (returnTo) {
         handleAuthRedirect(returnTo);
@@ -48,6 +50,11 @@ function VerifyOtpForm() {
         const roleRoutes: Record<string, string> = {
           tenant: "/dashboard/tenant",
           landlord: "/dashboard/landlord",
+          inspector: "/dashboard/inspector",
+          admin: "/admin",
+          agent: "/dashboard/agent",
+          user: "/dashboard/user",
+          super_admin: "/admin",
         };
         router.push(roleRoutes[res.user.role] ?? "/dashboard/tenant");
       }
