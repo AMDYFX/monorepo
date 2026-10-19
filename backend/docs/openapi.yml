@@ -6263,6 +6263,84 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/tenant/data-export:
+    post:
+      summary: Request a copy of the caller's personal data
+      description: |
+        Queues an asynchronous export of the caller's data: profile, tenant
+        applications, deals (with schedules), documents metadata, notifications
+        and notification preferences. The archive is a ZIP with one JSON file per
+        domain plus `manifest.json`. Secrets (password hashes, tokens, wallet keys)
+        are never included.
+
+        Limits: one active request per user (409), and one new request per 24 hours
+        (429). The archive is available for 7 days after it is ready. (#1899)
+      operationId: requestTenantDataExport
+      tags:
+        - Tenant
+      security:
+        - bearerAuth: []
+      responses:
+        '202':
+          description: Export queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    $ref: '#/components/schemas/TenantDataExportStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          description: A request was already made in the last 24 hours
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/data-export/{id}:
+    get:
+      summary: Get a data export's status and download URL
+      description: |
+        Returns the export status (`pending`, `processing`, `ready`, `failed`, or
+        `expired`). When ready, includes a presigned `downloadUrl` valid for five
+        minutes; each issue is audited. Another user's export returns 404. (#1899)
+      operationId: getTenantDataExport
+      tags:
+        - Tenant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Export status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/TenantDataExportStatus'
+                      - type: object
+                        properties:
+                          downloadUrl: { type: string, format: uri }
+                          downloadUrlExpiresAt: { type: string, format: date-time }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
     UserId:
@@ -6289,6 +6367,29 @@ components:
         type: string
         format: uuid
   schemas:
+    TenantDataExportStatus:
+      type: object
+      description: Status of a tenant personal-data export request (#1899)
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum: [pending, processing, ready, failed, expired]
+        requestedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        failureReason:
+          type: string
+          nullable: true
     TenantDocumentCategory:
       type: string
       enum: [lease_agreement, payment_receipt, identity_document, inspection_report, other]

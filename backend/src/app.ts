@@ -232,6 +232,15 @@ import {
   initLandlordPayoutScheduleStore,
 } from "./models/landlordPayoutScheduleStore.js";
 import { createLandlordPayoutScheduleRouter } from "./routes/landlordPayoutSchedule.js";
+import {
+  PostgresTenantDataExportStore,
+  initTenantDataExportStore,
+} from "./models/tenantDataExportStore.js";
+import { createTenantDataExportRouter } from "./routes/tenantDataExport.js";
+import {
+  tenantDataExportJobHandler,
+  TENANT_DATA_EXPORT_JOB_NAME,
+} from "./jobs/tenantDataExportJob.js";
 import { createWhistleblowerReportsRouter } from "./routes/whistleblowerReports.js";
 import { createTenantOnboardingRouter } from "./routes/tenantOnboarding.js";
 import { createDocsRouter } from "./routes/docs.js";
@@ -538,6 +547,12 @@ export function createApp() {
     dataRetentionPurgeJobHandler,
   );
 
+  // Tenant personal-data export archives (#1899)
+  jobScheduler.registerHandler(
+    TENANT_DATA_EXPORT_JOB_NAME,
+    tenantDataExportJobHandler,
+  );
+
   // Centralized KYC Status Change Webhook Trigger
   kycStatusEmitter.on("statusChanged", (userId: string, status: any) => {
     const eventType =
@@ -588,6 +603,7 @@ export function createApp() {
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
     initLandlordPayoutScheduleStore(new PostgresLandlordPayoutScheduleStore());
+    initTenantDataExportStore(new PostgresTenantDataExportStore());
     initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
     // ErasureService is the Postgres erasure request store (also used by the
     // data-retention job for expiry).
@@ -977,6 +993,7 @@ export function createApp() {
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
     app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
+    app.use("/api/tenant/data-export", createTenantDataExportRouter());
     app.use("/api/admin/credit-score", createAdminCreditScoreRouter());
     app.use("/api/tenant/documents", createTenantDocumentsRouter());
     app.use("/api/messaging", createMessagingRouter());
@@ -1100,6 +1117,7 @@ export function createApp() {
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
   app.use("/api/v1/tenant/credit-score", createTenantCreditScoreRouter());
+  app.use("/api/v1/tenant/data-export", createTenantDataExportRouter());
   app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());
   app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
   app.use("/api/v1/messaging", createMessagingRouter());
