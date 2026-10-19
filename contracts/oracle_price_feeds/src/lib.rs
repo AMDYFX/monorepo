@@ -1,9 +1,9 @@
 #![no_std]
 
 use soroban_access_control::{extend_storage_ttl, require_admin_permission};
-use soroban_pausable::{Pausable, PausableError};
+use soroban_pausable::PausableError;
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, vec, Address, Env, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, vec, Address, Env, IntoVal, Symbol, Vec,
 };
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -33,7 +33,7 @@ impl From<PausableError> for ContractError {
 }
 
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PriceFeed {
     pub pair: Symbol,
     pub price: i128,
@@ -103,12 +103,12 @@ impl OraclePriceFeeds {
             ContractError::NotAuthorized,
         )?;
 
-        let mut sources = Self::get_sources(&env, &pair);
+        let mut sources = Self::get_sources_internal(&env, &pair);
         if !sources.contains(&source) {
             sources.push_back(source.clone());
             let key = DataKey::Sources(pair.clone());
             env.storage().persistent().set(&key, &sources);
-            extend_storage_ttl(&env, &key);
+            extend_storage_ttl(&env, &key.into_val(&env));
         }
 
         env.events().publish(
@@ -137,11 +137,15 @@ impl OraclePriceFeeds {
             ContractError::NotAuthorized,
         )?;
 
-        let mut sources = Self::get_sources(&env, &pair);
-        sources.retain(|s| s != &source);
+        let mut sources = vec![&env];
+        for existing in Self::get_sources_internal(&env, &pair).iter() {
+            if existing != source {
+                sources.push_back(existing);
+            }
+        }
         let key = DataKey::Sources(pair.clone());
         env.storage().persistent().set(&key, &sources);
-        extend_storage_ttl(&env, &key);
+        extend_storage_ttl(&env, &key.into_val(&env));
 
         env.events().publish(
             (
@@ -180,7 +184,7 @@ impl OraclePriceFeeds {
 
         let key = DataKey::Quorum(pair.clone());
         env.storage().persistent().set(&key, &quorum);
-        extend_storage_ttl(&env, &key);
+        extend_storage_ttl(&env, &key.into_val(&env));
 
         env.events().publish(
             (Symbol::new(&env, "oracle"), Symbol::new(&env, "quorum_set")),
@@ -241,7 +245,7 @@ impl OraclePriceFeeds {
         };
 
         env.storage().persistent().set(&price_key, &feed);
-        extend_storage_ttl(&env, &price_key);
+        extend_storage_ttl(&env, &price_key.into_val(&env));
 
         env.events().publish(
             (
@@ -423,8 +427,7 @@ impl OraclePriceFeeds {
             old_price - new_price
         };
         // bps = (diff / old_price) * 10000
-        let bps = (diff as u128 * 10000 / old_price as u128) as u32;
-        bps
+        (diff as u128 * 10000 / old_price as u128) as u32
     }
 }
 
@@ -435,68 +438,40 @@ impl OraclePriceFeeds {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use soroban_sdk::testutils::{Address as _, Events, MockAuth, MockAuthInvoke};
-    use soroban_sdk::IntoVal;
+    use soroban_sdk::testutils::{Address as _, Events as _, Ledger as _};
 
-    fn setup(env: &Env) -> (Address, soroban_sdk::Address, OraclePriceFeedsClient) {
+    fn setup(env: &Env) -> (Address, Symbol, OraclePriceFeedsClient<'_>) {
+        env.mock_all_auths();
         let contract_id = env.register(OraclePriceFeeds, ());
         let client = OraclePriceFeedsClient::new(env, &contract_id);
         let admin = Address::generate(env);
-        let pair = Symbol::new(env, "NGN/USDC");
+        let pair = Symbol::new(env, "NGN_USDC");
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "init",
-                args: (admin.clone(),).into_val(env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.init(&admin).unwrap();
+        client.init(&admin);
         (admin, pair, client)
     }
 
     #[test]
     fn init_succeeds() {
         let env = Env::default();
+        env.mock_all_auths();
         let admin = Address::generate(&env);
         let contract_id = env.register(OraclePriceFeeds, ());
         let client = OraclePriceFeedsClient::new(&env, &contract_id);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "init",
-                args: (admin.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        let result = client.init(&admin);
-        assert!(result.is_ok());
+        client.init(&admin);
+        assert!(!client.is_paused());
     }
 
     #[test]
     fn init_emits_event() {
         let env = Env::default();
+        env.mock_all_auths();
         let admin = Address::generate(&env);
         let contract_id = env.register(OraclePriceFeeds, ());
         let client = OraclePriceFeedsClient::new(&env, &contract_id);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "init",
-                args: (admin.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.init(&admin).unwrap();
+        client.init(&admin);
 
         let events = env.events().all();
         assert!(!events.is_empty());
@@ -505,19 +480,9 @@ mod tests {
     #[test]
     fn add_source_requires_admin() {
         let env = Env::default();
-        let (admin, pair, client) = setup(&env);
+        let (_admin, pair, client) = setup(&env);
         let attacker = Address::generate(&env);
         let source = Address::generate(&env);
-
-        env.mock_auths(&[MockAuth {
-            address: &attacker,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (attacker.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
         let result = client.try_add_source(&attacker, &pair, &source);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
@@ -529,17 +494,7 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.add_source(&admin, &pair, &source);
 
         let events = env.events().all();
         assert!(!events.is_empty());
@@ -552,27 +507,7 @@ mod tests {
         let attacker = Address::generate(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.add_source(&admin, &pair, &source).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &attacker,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "remove_source",
-                args: (attacker.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
         let result = client.try_remove_source(&attacker, &pair, &source);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
@@ -584,29 +519,9 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "remove_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.remove_source(&admin, &pair, &source).unwrap();
+        client.remove_source(&admin, &pair, &source);
 
         let events = env.events().all();
         assert!(!events.is_empty());
@@ -615,20 +530,10 @@ mod tests {
     #[test]
     fn unauthorized_source_rejected() {
         let env = Env::default();
-        let (admin, pair, client) = setup(&env);
+        let (_admin, pair, client) = setup(&env);
         let unauthorized_source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &unauthorized_source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (unauthorized_source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        let result = client.try_update_price(&unauthorized_source, &pair, 1000000);
+        let result = client.try_update_price(&unauthorized_source, &pair, &1000000);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
     }
 
@@ -638,44 +543,16 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.add_source(&admin, &pair, &source);
 
         // Test zero price
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 0i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        let result = client.try_update_price(&source, &pair, 0);
+        let result = client.try_update_price(&source, &pair, &0);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::InvalidPrice);
 
         // Test negative price
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), -100i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        let result = client.try_update_price(&source, &pair, -100);
+        let result = client.try_update_price(&source, &pair, &-100);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::InvalidPrice);
     }
 
@@ -685,44 +562,16 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.add_source(&admin, &pair, &source);
 
         // First price
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        client.update_price(&source, &pair, 1000000).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
         // Try to set a price that deviates more than 500 bps (5%)
         // 1000000 + 600000 = 1600000 (60% increase, well above 5%)
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1600000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        let result = client.try_update_price(&source, &pair, 1600000);
+        let result = client.try_update_price(&source, &pair, &1600000);
         assert_eq!(
             result.unwrap_err().unwrap(),
             ContractError::InvalidDeviation
@@ -735,44 +584,16 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.add_source(&admin, &pair, &source);
 
         // First price
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        client.update_price(&source, &pair, 1000000).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
         // Price within 5% (500 bps)
         // 1000000 * 0.05 = 50000, so 1050000 is exactly at the threshold
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1050000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        let result = client.try_update_price(&source, &pair, 1050000);
+        let result = client.try_update_price(&source, &pair, &1050000);
         assert!(result.is_ok());
     }
 
@@ -782,34 +603,12 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.update_price(&source, &pair, 1000000).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
         // Advance ledger past staleness threshold (default 600s)
-        env.ledger().with_mut(|l| {
-            l.timestamp = 700;
-        });
+        env.ledger().set_timestamp(700);
 
         let result = client.try_get_price(&pair);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::PriceTooStale);
@@ -821,33 +620,11 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.update_price(&source, &pair, 1000000).unwrap();
-
-        let result = client.get_price(&pair);
-        assert!(result.is_ok());
-        let feed = result.unwrap();
+        let feed = client.get_price(&pair);
         assert_eq!(feed.price, 1000000);
         assert_eq!(feed.decimals, 7);
     }
@@ -858,33 +635,11 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.update_price(&source, &pair, 1000000).unwrap();
-
-        let result = client.is_stale(&pair);
-        assert!(result.is_ok());
-        assert!(!result.unwrap());
+        assert!(!client.is_stale(&pair));
     }
 
     #[test]
@@ -893,38 +648,14 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.update_price(&source, &pair, 1000000).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
         // Advance ledger
-        env.ledger().with_mut(|l| {
-            l.timestamp = 700;
-        });
+        env.ledger().set_timestamp(700);
 
-        let result = client.is_stale(&pair);
-        assert!(result.is_ok());
-        assert!(result.unwrap());
+        assert!(client.is_stale(&pair));
     }
 
     #[test]
@@ -933,41 +664,11 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.pause(&admin);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "pause",
-                args: (admin.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.pause(&admin).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        let result = client.try_update_price(&source, &pair, 1000000);
+        let result = client.try_update_price(&source, &pair, &1000000);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::Paused);
     }
 
@@ -977,71 +678,21 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.pause(&admin);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "pause",
-                args: (admin.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.unpause(&admin);
 
-        client.pause(&admin).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "unpause",
-                args: (admin.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.unpause(&admin).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        let result = client.try_update_price(&source, &pair, 1000000);
+        let result = client.try_update_price(&source, &pair, &1000000);
         assert!(result.is_ok());
     }
 
     #[test]
     fn pause_requires_admin() {
         let env = Env::default();
-        let (admin, pair, client) = setup(&env);
+        let (_admin, _pair, client) = setup(&env);
         let attacker = Address::generate(&env);
-
-        env.mock_auths(&[MockAuth {
-            address: &attacker,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "pause",
-                args: (attacker.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
         let result = client.try_pause(&attacker);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
@@ -1053,27 +704,7 @@ mod tests {
         let (admin, _pair, client) = setup(&env);
         let attacker = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "pause",
-                args: (admin.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.pause(&admin).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &attacker,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "unpause",
-                args: (attacker.clone(),).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.pause(&admin);
 
         let result = client.try_unpause(&attacker);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
@@ -1085,38 +716,17 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
+        env.ledger().set_timestamp(1_000);
+        client.update_price(&source, &pair, &1000000);
 
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.update_price(&source, &pair, 1000000).unwrap();
-
-        let result = client.get_price(&pair);
-        assert!(result.is_ok());
-        let feed = result.unwrap();
+        let feed = client.get_price(&pair);
 
         // Verify field names match backend expectations
         assert_eq!(feed.price, 1000000);
         assert_eq!(feed.decimals, 7);
-        assert!(feed.updated_at > 0);
+        assert_eq!(feed.updated_at, 1_000);
         assert_eq!(feed.sequence, 0);
     }
 
@@ -1125,16 +735,6 @@ mod tests {
         let env = Env::default();
         let (_admin, _pair, client) = setup(&env);
         let attacker = Address::generate(&env);
-
-        env.mock_auths(&[MockAuth {
-            address: &attacker,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "set_staleness_threshold",
-                args: (attacker.clone(), 300u64).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
         let result = client.try_set_staleness_threshold(&attacker, &300u64);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
@@ -1145,17 +745,7 @@ mod tests {
         let env = Env::default();
         let (admin, _pair, client) = setup(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "set_staleness_threshold",
-                args: (admin.clone(), 300u64).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.set_staleness_threshold(&admin, &300u64).unwrap();
+        client.set_staleness_threshold(&admin, &300u64);
 
         let events = env.events().all();
         assert!(!events.is_empty());
@@ -1167,16 +757,6 @@ mod tests {
         let (_admin, _pair, client) = setup(&env);
         let attacker = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &attacker,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "set_max_deviation_bps",
-                args: (attacker.clone(), 1000u32).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
         let result = client.try_set_max_deviation_bps(&attacker, &1000u32);
         assert_eq!(result.unwrap_err().unwrap(), ContractError::NotAuthorized);
     }
@@ -1186,17 +766,7 @@ mod tests {
         let env = Env::default();
         let (admin, _pair, client) = setup(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "set_max_deviation_bps",
-                args: (admin.clone(), 1000u32).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.set_max_deviation_bps(&admin, &1000u32).unwrap();
+        client.set_max_deviation_bps(&admin, &1000u32);
 
         let events = env.events().all();
         assert!(!events.is_empty());
@@ -1208,48 +778,20 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.add_source(&admin, &pair, &source).unwrap();
+        client.add_source(&admin, &pair, &source);
 
         // First update
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        client.update_price(&source, &pair, 1000000).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
-        let feed1 = client.get_price(&pair).unwrap();
+        let feed1 = client.get_price(&pair);
         assert_eq!(feed1.sequence, 0);
 
         // Second update (within deviation bounds)
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1010000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
 
-        client.update_price(&source, &pair, 1010000).unwrap();
+        client.update_price(&source, &pair, &1010000);
 
-        let feed2 = client.get_price(&pair).unwrap();
+        let feed2 = client.get_price(&pair);
         assert_eq!(feed2.sequence, 1);
     }
 
@@ -1259,29 +801,9 @@ mod tests {
         let (admin, pair, client) = setup(&env);
         let source = Address::generate(&env);
 
-        env.mock_auths(&[MockAuth {
-            address: &admin,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "add_source",
-                args: (admin.clone(), pair.clone(), source.clone()).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
+        client.add_source(&admin, &pair, &source);
 
-        client.add_source(&admin, &pair, &source).unwrap();
-
-        env.mock_auths(&[MockAuth {
-            address: &source,
-            invoke: &MockAuthInvoke {
-                contract: &client.address,
-                fn_name: "update_price",
-                args: (source.clone(), pair.clone(), 1000000i128).into_val(&env),
-                sub_invokes: &[],
-            },
-        }]);
-
-        client.update_price(&source, &pair, 1000000).unwrap();
+        client.update_price(&source, &pair, &1000000);
 
         let events = env.events().all();
         assert!(!events.is_empty());
