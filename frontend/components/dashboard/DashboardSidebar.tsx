@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import {
   Home,
   Building2,
+  Heart,
   CreditCard,
   MessageSquare,
   Settings,
@@ -44,6 +45,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
     { href: "/dashboard/tenant/payments", label: "Payments", icon: CreditCard },
     { href: "/dashboard/tenant/lease", label: "My Lease", icon: FileText },
     { href: "/properties", label: "Browse Properties", icon: Building2 },
+    { href: "/properties/saved", label: "Saved Properties", icon: Heart },
     {
       href: "/dashboard/tenant/rate-whistleblower",
       label: "Rate Whistleblower",

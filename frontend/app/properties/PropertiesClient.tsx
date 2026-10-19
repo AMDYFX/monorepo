@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, Suspense, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Search, SlidersHorizontal, SearchX, X } from "lucide-react";
+import { Scale, Search, SlidersHorizontal, SearchX, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +21,7 @@ import {
   type PropertyListing,
 } from "@/lib/propertiesApi";
 import { trackUserInteraction, startPropertyDiscovery, trackPropertyDiscoveryStep } from "@/lib/analytics-init";
+import { canCompare, encodeCompareIds, parseCompareIds } from "@/lib/compare";
 
 const CITIES = ["Lagos", "Abuja", "Port Harcourt", "Ibadan", "Enugu"];
 const BED_OPTIONS = ["Any", "1", "2", "3", "4", "4+"];
@@ -35,6 +36,7 @@ const SORT_OPTIONS = [
 function PropertiesContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const compareIds = parseCompareIds(searchParams.get("ids"));
 
   const [savedListingIds, setSavedListingIds] = useState<string[]>([]);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -578,12 +580,20 @@ function PropertiesContent() {
       {/* Properties Grid */}
       <section className="py-12">
         <div className="container mx-auto px-4">
-          <div className="mb-6 flex items-center justify-between">
+          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <p className="text-muted-foreground">
               Showing{" "}
               <span className="font-bold text-foreground">{total}</span>{" "}
               properties
             </p>
+            {canCompare(compareIds) && (
+              <Button asChild className="gap-2 border-2 border-foreground font-bold">
+                <Link href={`/properties/compare?ids=${encodeCompareIds(compareIds)}`}>
+                  <Scale className="h-4 w-4" aria-hidden="true" />
+                  Compare ({compareIds.length})
+                </Link>
+              </Button>
+            )}
           </div>
 
           {isLoading ? (
