@@ -158,6 +158,28 @@ export interface OnChainReceipt {
   timestamp: number       // u64
 }
 
+/** Parameters for the vesting_schedule contract's `create_vesting_schedule`. Times are unix seconds. */
+export interface CreateVestingScheduleParams {
+  beneficiary: string // Stellar Address
+  totalAmount: bigint // i128, token base units
+  startTime: number
+  cliffTime: number
+  endTime: number
+  revocable: boolean
+}
+
+/** Mirrors the vesting_schedule contract's `VestingSchedule` struct. */
+export interface VestingScheduleRecord {
+  beneficiary: string
+  totalAmount: bigint
+  claimedAmount: bigint
+  startTime: number
+  cliffTime: number
+  endTime: number
+  revocable: boolean
+  revoked: boolean
+}
+
 /**
  * Allowlist entry from allowlist_registry contract.
  * Mirrors the contract's Entry struct.
@@ -285,4 +307,14 @@ export interface SorobanAdapter {
   executeDrain?(): Promise<string>
   setRecoveryDelay?(delaySeconds: number): Promise<string>
   getCircuitBreakerState?(): Promise<{ frozen: boolean; drainProposed: boolean; drainDestination?: string; recoveryDelay: number }>
+
+  // vesting_schedule contract — linear vesting with cliff and admin revocation (#1911).
+  // Admin operations are signed by the admin key. `claim` requires the beneficiary's
+  // signature, so it is prepared as an unsigned transaction and submitted after signing.
+  createVestingSchedule?(params: CreateVestingScheduleParams): Promise<string>
+  revokeVesting?(beneficiary: string): Promise<string>
+  getVestingSchedule?(beneficiary: string): Promise<VestingScheduleRecord | null>
+  getClaimableVested?(beneficiary: string): Promise<bigint>
+  prepareVestingClaim?(beneficiary: string): Promise<string>
+  submitVestingClaim?(signedXdr: string, beneficiary: string): Promise<string>
 }

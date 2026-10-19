@@ -13,15 +13,23 @@ import {
      RentToOwnDealActionParams,
      OraclePriceReading,
      OnChainReceipt,
+     CreateVestingScheduleParams,
+     VestingScheduleRecord,
 } from './adapter.js'
 import { SorobanConfig } from './client.js'
 import { RawReceiptEvent } from '../indexer/event-parser.js'
 import { logger } from '../utils/logger.js'
+import { Account, TransactionBuilder } from '@stellar/stellar-sdk'
+import { AppError } from '../errors/AppError.js'
+import { ErrorCode } from '../errors/errorCodes.js'
+import { assertVestingClaimXdr, buildVestingClaimOperation } from './vestingClaim.js'
+import { vestedAmount } from './vestingMath.js'
 
 export class StubSorobanAdapter implements SorobanAdapter {
      private static stubBalances = new Map<string, bigint>()
      private static stubBonds = new Map<string, bigint>()
      private static stubReputations = new Map<string, TenantReputationRecord>()
+     private static stubVestings = new Map<string, VestingScheduleRecord>()
      private config: SorobanConfig
 
      constructor(config: SorobanConfig) {
@@ -40,7 +48,8 @@ export class StubSorobanAdapter implements SorobanAdapter {
           this.stubBalances.clear()
           this.stubBonds.clear()
           this.stubReputations.clear()
-          logger.debug('Soroban stub: static reset complete (balances, bonds, and reputations cleared)')
+          this.stubVestings.clear()
+          logger.debug('Soroban stub: static reset complete (balances, bonds, reputations and vestings cleared)')
      }
 
      /**
@@ -406,6 +415,127 @@ async requestRentRelease(params: RequestRentReleaseParams): Promise<void> {
      async rentWalletBalance(account: string): Promise<bigint> {
           logger.debug('Soroban stub: rentWalletBalance', { account })
           return BigInt(0)
+     }
+
+     // vesting_schedule contract methods (#1911). These follow the contract's rules
+     // (see contracts/vesting_schedule) so that routes can be tested end to end.
+     async createVestingSchedule(params: CreateVestingScheduleParams): Promise<string> {
+          const { beneficiary, totalAmount, startTime, cliffTime, endTime, revocable } = params
+          if (totalAmount <= 0n) {
+               throw new Error('Stub: vesting amount must be positive')
+          }
+          if (!(startTime < endTime && startTime <= cliffTime && cliffTime <= endTime)) {
+               throw new Error('Stub: invalid vesting schedule times')
+          }
+          if (StubSorobanAdapter.stubVestings.has(beneficiary)) {
+               throw new Error('Stub: vesting schedule already exists for beneficiary')
+          }
+
+          StubSorobanAdapter.stubVestings.set(beneficiary, {
+               beneficiary,
+               totalAmount,
+               claimedAmount: 0n,
+               startTime,
+               cliffTime,
+               endTime,
+               revocable,
+               revoked: false,
+          })
+          logger.debug('Soroban stub: createVestingSchedule', { beneficiary, totalAmount: totalAmount.toString() })
+          return `stub_tx_hash_create_vesting_${beneficiary}`
+     }
+
+     async revokeVesting(beneficiary: string): Promise<string> {
+          const record = StubSorobanAdapter.stubVestings.get(beneficiary)
+          if (!record) {
+               throw new Error('Stub: no vesting schedule for beneficiary')
+          }
+          if (!record.revocable) {
+               throw new Error('Stub: vesting schedule is not revocable')
+          }
+          if (record.revoked) {
+               throw new Error('Stub: vesting schedule already revoked')
+          }
+
+          const now = Math.floor(Date.now() / 1000)
+          const vested = vestedAmount(
+               record.totalAmount,
+               BigInt(record.startTime),
+               BigInt(record.cliffTime),
+               BigInt(record.endTime),
+               BigInt(now),
+          )
+          // Same truncation as the contract: nothing vests after the revocation time.
+          const cutoff = Math.max(now, record.startTime)
+          StubSorobanAdapter.stubVestings.set(beneficiary, {
+               ...record,
+               totalAmount: vested,
+               claimedAmount: vested,
+               endTime: cutoff,
+               cliffTime: Math.min(record.cliffTime, cutoff),
+               revoked: true,
+          })
+          logger.debug('Soroban stub: revokeVesting', { beneficiary, vested: vested.toString() })
+          return `stub_tx_hash_revoke_vesting_${beneficiary}`
+     }
+
+     async getVestingSchedule(beneficiary: string): Promise<VestingScheduleRecord | null> {
+          const record = StubSorobanAdapter.stubVestings.get(beneficiary)
+          return record ? { ...record } : null
+     }
+
+     async getClaimableVested(beneficiary: string): Promise<bigint> {
+          const record = StubSorobanAdapter.stubVestings.get(beneficiary)
+          return record ? this.claimableFor(record) : 0n
+     }
+
+     async prepareVestingClaim(beneficiary: string): Promise<string> {
+          const contractId = this.requireVestingContractId()
+          const tx = new TransactionBuilder(new Account(beneficiary, '0'), {
+               fee: '100',
+               networkPassphrase: this.config.networkPassphrase,
+          })
+               .addOperation(buildVestingClaimOperation(contractId, beneficiary))
+               .setTimeout(300)
+               .build()
+          return tx.toXDR()
+     }
+
+     async submitVestingClaim(signedXdr: string, beneficiary: string): Promise<string> {
+          const contractId = this.requireVestingContractId()
+          assertVestingClaimXdr(signedXdr, contractId, this.config.networkPassphrase, beneficiary)
+
+          const record = StubSorobanAdapter.stubVestings.get(beneficiary)
+          const claimable = record ? this.claimableFor(record) : 0n
+          if (!record || claimable <= 0n) {
+               throw new AppError(ErrorCode.VALIDATION_ERROR, 400, 'Nothing vested to claim')
+          }
+
+          StubSorobanAdapter.stubVestings.set(beneficiary, {
+               ...record,
+               claimedAmount: record.claimedAmount + claimable,
+          })
+          return `stub_tx_hash_claim_vesting_${beneficiary}`
+     }
+
+     private requireVestingContractId(): string {
+          if (!this.config.vestingScheduleId) {
+               throw new Error('SOROBAN_VESTING_SCHEDULE_ID not configured')
+          }
+          return this.config.vestingScheduleId
+     }
+
+     private claimableFor(record: VestingScheduleRecord): bigint {
+          const now = BigInt(Math.floor(Date.now() / 1000))
+          const vested = vestedAmount(
+               record.totalAmount,
+               BigInt(record.startTime),
+               BigInt(record.cliffTime),
+               BigInt(record.endTime),
+               now,
+          )
+          const claimable = vested - record.claimedAmount
+          return claimable > 0n ? claimable : 0n
      }
 
      // slashing_module contract methods (stub implementations)

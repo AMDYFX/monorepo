@@ -20,6 +20,7 @@ export type SorobanConfig = {
   rentWalletId?: string
   slashingModuleId?: string
   bondCollateralId?: string
+  vestingScheduleId?: string
   whistleblowerRewardsId?: string
   tenantReputationId?: string
   adminSecret?: string
@@ -48,6 +49,7 @@ export function getSorobanConfigFromEnv(env: NodeJS.ProcessEnv): SorobanConfig {
     rentWalletId: addresses.rentWallet,
     slashingModuleId: addresses.slashingModule,
     bondCollateralId: addresses.bondCollateral,
+    vestingScheduleId: addresses.vestingSchedule,
     whistleblowerRewardsId: addresses.whistleblowerRewards,
     tenantReputationId: addresses.tenantReputation,
     adminSecret: env.SOROBAN_ADMIN_SECRET,

@@ -20,6 +20,8 @@ members = [
   "schema_registry",
   "multisig_admin",
   "tenant_reputation",
+  "vesting_schedule",
+  "governance",
 ]
 
 [profile.release]
