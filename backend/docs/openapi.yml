@@ -47,6 +47,12 @@ paths:
                     type: number
                     format: int64
                     example: 3600
+                  stubbedIntegrations:
+                    type: array
+                    description: Integrations resolving to a stub or mock, including those opted out via ALLOW_STUB_PROVIDERS (#1942)
+                    items:
+                      type: string
+                    example: [rentGuarantee]
         "429":
           $ref: "#/components/responses/TooManyRequests"
         default:
@@ -6714,6 +6720,645 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/deals/{dealId}/tenant-rating:
+    post:
+      summary: Rate the tenant of a deal
+      description: |
+        Landlord only, once per deal. The deal must be `completed`, or `active`
+        and created at least 3 months ago. `overall` is the mean of the three
+        dimension scores, rounded to a whole number. (#1905)
+      operationId: createTenantRating
+      tags:
+        - Tenant Rating
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentTimeliness, propertyCare, communication]
+              properties:
+                paymentTimeliness:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                propertyCare:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                communication:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                comment:
+                  type: string
+                  maxLength: 500
+      responses:
+        "201":
+          description: Rating created
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/rating-card:
+    get:
+      summary: Get the caller's rating card aggregate
+      description: Averages per dimension, rating count and up to five recent comments. (#1905)
+      operationId: getTenantRatingCard
+      tags:
+        - Tenant Rating
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Rating card aggregate
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                  averages:
+                    type: object
+                    properties:
+                      paymentTimeliness:
+                        type: number
+                        nullable: true
+                      propertyCare:
+                        type: number
+                        nullable: true
+                      communication:
+                        type: number
+                        nullable: true
+                      overall:
+                        type: number
+                        nullable: true
+                  recentComments:
+                    type: array
+                    items:
+                      type: string
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/rating-card/share:
+    post:
+      summary: Create a public share link for the rating card
+      description: |
+        Returns a 128-bit token once. Only its hash is stored, so the token cannot
+        be retrieved again; create a new link if it is lost. (#1905)
+      operationId: createRatingCardShare
+      tags:
+        - Tenant Rating
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ttlDays:
+                  type: integer
+                  minimum: 1
+                  maximum: 30
+                  default: 7
+      responses:
+        "201":
+          description: Share link created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  token:
+                    type: string
+                    example: 3f9c2a1e7b8d4c6a9e0f1b2c3d4e5f60
+                  url:
+                    type: string
+                    example: /api/v1/public/rating-card/3f9c2a1e7b8d4c6a9e0f1b2c3d4e5f60
+                  expiresAt:
+                    type: string
+                    format: date-time
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/rating-card/share/{id}:
+    delete:
+      summary: Revoke a share link
+      description: Deleting the share makes its public URL return 404 immediately. (#1905)
+      operationId: revokeRatingCardShare
+      tags:
+        - Tenant Rating
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Share link revoked
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/public/rating-card/{token}:
+    get:
+      summary: View a shared rating card
+      description: |
+        Unauthenticated and rate-limited per IP. Shows the first name and last
+        initial only, with no email, phone or IDs. Responses are never cached.
+        Unknown, expired and revoked tokens return 404. (#1905)
+      operationId: getPublicRatingCard
+      tags:
+        - Tenant Rating
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{32}$'
+      responses:
+        "200":
+          description: Public rating card
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                example: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  displayName:
+                    type: string
+                    example: Ada O.
+                  count:
+                    type: integer
+                  averages:
+                    type: object
+                  recentComments:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "429":
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspector/jobs:
+    get:
+      summary: List available inspection jobs in the inspector's service areas
+      description: |
+        Verified inspectors only. Gated by INSPECTOR_DASHBOARD_ENABLED. Jobs are
+        filtered to the inspector's service areas, and to the `area` query when given. (#1903)
+      operationId: listAvailableInspectionJobs
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available]
+            default: available
+        - name: area
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Available jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InspectionJob'
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspector/jobs/mine:
+    get:
+      summary: List the inspector's own jobs
+      description: Jobs the caller has claimed or submitted. Verified inspectors only. (#1903)
+      operationId: listMyInspectionJobs
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's jobs
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspector/jobs/{id}/claim:
+    post:
+      summary: Claim an available inspection job
+      description: |
+        Atomic: when two inspectors race, exactly one succeeds and the other gets 409.
+        The claim expires after INSPECTION_CLAIM_WINDOW_HOURS (default 48), after
+        which the job returns to available. The listing area must be in the
+        inspector's service areas. (#1903)
+      operationId: claimInspectionJob
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Job claimed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/InspectionJob'
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspector/jobs/{id}/photos/presign:
+    post:
+      summary: Get a presigned upload URL for a report photo
+      description: Only for the inspector holding a live claim. The object key is bound to the job and must be listed in the report's photoKeys. (#1903)
+      operationId: presignInspectionJobPhoto
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contentType]
+              properties:
+                contentType:
+                  type: string
+                  enum: [image/jpeg, image/png, image/webp, image/heic]
+      responses:
+        "200":
+          description: Presigned upload URL
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      uploadUrl:
+                        type: string
+                      objectKey:
+                        type: string
+                      expiresAt:
+                        type: string
+                        format: date-time
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/inspector/jobs/{id}/report:
+    post:
+      summary: Submit the inspection report
+      description: |
+        Only for the inspector holding a live claim. Moves the job to `submitted`.
+        Rules mirror the inspection_reports table: grade A-D, at least 3 unique
+        photo keys issued for this job, notes of at least 20 characters. (#1903)
+      operationId: submitInspectionReport
+      tags:
+        - Inspections
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [overallGrade, roomChecklist, photoKeys, notes]
+              properties:
+                overallGrade:
+                  type: string
+                  enum: [A, B, C, D]
+                roomChecklist:
+                  type: object
+                  additionalProperties: true
+                photoKeys:
+                  type: array
+                  minItems: 3
+                  maxItems: 50
+                  uniqueItems: true
+                  items:
+                    type: string
+                notes:
+                  type: string
+                  minLength: 20
+                  maxLength: 5000
+      responses:
+        "201":
+          description: Report submitted
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspector/jobs:
+    get:
+      summary: List inspection jobs (admin)
+      description: Requires inspections:review. Gated by INSPECTOR_DASHBOARD_ENABLED. (#1903)
+      operationId: listAdminInspectionJobs
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [available, claimed, in_progress, submitted, approved, rejected]
+      responses:
+        "200":
+          description: Jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/InspectionJob'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Create an inspection job for a listing
+      description: |
+        Requires inspections:review. The listing must be pending review or approved,
+        and must not already have an open job. (#1903)
+      operationId: createInspectionJob
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [listingId, offeredFeeNgn]
+              properties:
+                listingId:
+                  type: string
+                  format: uuid
+                offeredFeeNgn:
+                  type: number
+                  exclusiveMinimum: 0
+                  maximum: 1000000000
+                  example: 15000
+      responses:
+        "201":
+          description: Job created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/InspectionJob'
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspector/jobs/{id}/approve:
+    post:
+      summary: Approve a submitted inspection job
+      description: Requires inspections:review. Only submitted jobs can be approved. (#1903)
+      operationId: approveInspectionJob
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Job approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/InspectionJob'
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/inspector/jobs/{id}/reject:
+    post:
+      summary: Reject a submitted inspection job
+      description: Requires inspections:review. Only submitted jobs can be rejected. (#1903)
+      operationId: rejectInspectionJob
+      tags:
+        - Admin
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 1000
+      responses:
+        "200":
+          description: Job rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/InspectionJob'
+        "400":
+          $ref: '#/components/responses/ValidationError'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+        "403":
+          $ref: '#/components/responses/Forbidden'
+        "404":
+          $ref: '#/components/responses/NotFound'
+        "409":
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
     UserId:
@@ -6740,6 +7385,50 @@ components:
         type: string
         format: uuid
   schemas:
+    InspectionJob:
+      type: object
+      description: Inspection job board entry (#1903)
+      required: [id, listingId, status, offeredFeeNgn]
+      properties:
+        id:
+          type: string
+          format: uuid
+        listingId:
+          type: string
+          format: uuid
+        listingArea:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [available, claimed, in_progress, submitted, approved, rejected]
+        offeredFeeNgn:
+          type: number
+          example: 15000
+        inspectorId:
+          type: string
+          nullable: true
+        claimDeadline:
+          type: string
+          format: date-time
+          nullable: true
+        submittedAt:
+          type: string
+          format: date-time
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
     VestingSchedule:
       type: object
       description: A beneficiary's vesting allocation. Amounts are decimal strings in token base units.
@@ -9095,3 +9784,5 @@ tags:
     description: Landlord rent guarantee insurance - quotes, policy binding and claims
   - name: Governance
     description: Stake-weighted parameter governance proposals and voting (contracts/governance)
+  - name: Tenant Rating
+    description: Landlord ratings of tenants after a deal, and the tenant's portable rating card with expiring public share links (#1905)

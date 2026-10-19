@@ -52,6 +52,13 @@ export const rateLimitProfiles = {
     keyPrefix: 'rl:messaging',
     keyBy: 'user',
   },
+  // Public tenant rating card share links (#1905): unauthenticated, so limited per IP.
+  publicRatingCard: {
+    points: 30,
+    duration: 60, // 1 minute
+    keyPrefix: 'rl:public_rating_card',
+    keyBy: 'ip',
+  },
 } as const satisfies Record<string, RateLimiterOptions>
 
 export type RateLimitProfileName = keyof typeof rateLimitProfiles
