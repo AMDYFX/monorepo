@@ -611,4 +611,86 @@ describe('RealSorobanAdapter', () => {
       expect(Array.isArray(events)).toBe(true)
     })
   })
+  describe('tenant reputation', () => {
+    const TENANT_REPUTATION_ID = 'CFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFE7'
+    const record = {
+      compositeScore: 840,
+      paymentScore: 900,
+      propertyCareScore: 800,
+      communicationScore: 760,
+      totalRatings: 12,
+      lastUpdated: 0n,
+    }
+
+    it('updateTenantReputation throws ConfigurationError when contract id missing', async () => {
+      await expect(adapter.updateTenantReputation('tenant-1', record)).rejects.toThrow(ConfigurationError)
+    })
+
+    it('updateTenantReputation throws ConfigurationError when admin secret missing', async () => {
+      const noAdmin = new RealSorobanAdapter({
+        ...mockConfig,
+        tenantReputationId: TENANT_REPUTATION_ID,
+        adminSecret: undefined,
+      })
+      await expect(noAdmin.updateTenantReputation('tenant-1', record)).rejects.toThrow(ConfigurationError)
+    })
+
+    it('updateTenantReputation calls update_reputation with exact argument order and types', async () => {
+      const configured = new RealSorobanAdapter({ ...mockConfig, tenantReputationId: TENANT_REPUTATION_ID })
+      const exec = vi.fn().mockResolvedValue(undefined)
+      ;(configured as any).adminSigningService = { executeAdminOperation: exec }
+
+      await configured.updateTenantReputation('tenant-1', record)
+
+      const { nativeToScVal } = await import('@stellar/stellar-sdk')
+      expect(exec).toHaveBeenCalledTimes(1)
+      const call = exec.mock.calls[0][0]
+      expect(call.contractId).toBe(TENANT_REPUTATION_ID)
+      expect(call.operation).toBe('update_reputation')
+      expect(call.args).toHaveLength(7)
+      expect(call.args.slice(1)).toEqual(['tenant-1', 840, 900, 800, 760, 12])
+      const typed = (nativeToScVal as any).mock.calls.map((c: any[]) => c[1]?.type)
+      expect(typed.slice(-6)).toEqual(['string', 'u32', 'u32', 'u32', 'u32', 'u32'])
+    })
+
+    it('updateTenantReputation wraps failures in ContractError', async () => {
+      const configured = new RealSorobanAdapter({ ...mockConfig, tenantReputationId: TENANT_REPUTATION_ID })
+      ;(configured as any).adminSigningService = {
+        executeAdminOperation: vi.fn().mockRejectedValue(new Error('rpc down')),
+      }
+      await expect(configured.updateTenantReputation('tenant-1', record)).rejects.toThrow(ContractError)
+    })
+
+    it('getTenantReputation throws ConfigurationError when contract id missing', async () => {
+      await expect(adapter.getTenantReputation('tenant-1')).rejects.toThrow(ConfigurationError)
+    })
+
+    it('getTenantReputation reads get_reputation and maps snake_case fields', async () => {
+      const { scValToNative } = await import('@stellar/stellar-sdk')
+      const configured = new RealSorobanAdapter({ ...mockConfig, tenantReputationId: TENANT_REPUTATION_ID })
+      const readOnly = vi.fn().mockResolvedValue({})
+      ;(configured as any).invokeReadOnly = readOnly
+      ;(scValToNative as any).mockReturnValueOnce({
+        composite_score: 840,
+        payment_score: 900,
+        property_care_score: 800,
+        communication_score: 760,
+        total_ratings: 12,
+        last_updated: 1700000000n,
+      })
+
+      const result = await configured.getTenantReputation('tenant-1')
+
+      expect(readOnly).toHaveBeenCalledWith(TENANT_REPUTATION_ID, 'get_reputation', ['tenant-1'])
+      expect(result).toEqual({ ...record, lastUpdated: 1700000000n })
+    })
+
+    it('getTenantReputation returns null when the contract has no record', async () => {
+      const { scValToNative } = await import('@stellar/stellar-sdk')
+      const configured = new RealSorobanAdapter({ ...mockConfig, tenantReputationId: TENANT_REPUTATION_ID })
+      ;(configured as any).invokeReadOnly = vi.fn().mockResolvedValue({})
+      ;(scValToNative as any).mockReturnValueOnce(null)
+      expect(await configured.getTenantReputation('tenant-1')).toBeNull()
+    })
+  })
 })

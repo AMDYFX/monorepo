@@ -5230,8 +5230,566 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/auth/sessions:
+    get:
+      summary: List the caller's active sessions
+      description: >-
+        One entry per device (sessions that share a refresh-token family are collapsed to
+        the newest). `current` is true for the session making this request.
+      operationId: listMySessions
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active sessions, most recently active first
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - sessions
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ActiveSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Revoke the caller's sessions
+      description: >-
+        With `others=true`, revokes every session except the current device ("log out other
+        devices"). Without it, revokes all sessions including the current one. Matching
+        refresh tokens are invalidated too, so revoked tokens fail on the very next request.
+      operationId: revokeMySessions
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: others
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokedSessions'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/auth/sessions/{id}:
+    delete:
+      summary: Revoke one of the caller's sessions
+      description: >-
+        Also revokes every session in the same refresh-token family and invalidates its
+        refresh tokens. A session id belonging to another user returns 404.
+      operationId: revokeMySession
+      tags:
+        - Auth
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                properties:
+                  message:
+                    type: string
+                    example: Session revoked
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/users/{userId}/sessions:
+    get:
+      summary: List a user's active sessions (admin)
+      description: Requires the `users:manage` permission.
+      operationId: listUserSessionsAdmin
+      tags:
+        - Auth
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: The user's active sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - sessions
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ActiveSession'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Force-logout a user (admin)
+      description: >-
+        Revokes every session and refresh token for the user and writes an
+        `ADMIN_USER_SESSIONS_REVOKED` audit log entry. Requires the `users:manage` permission.
+      operationId: revokeUserSessionsAdmin
+      tags:
+        - Auth
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UserId'
+      responses:
+        '200':
+          description: Sessions revoked
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RevokedSessions'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/landlord/partner-application:
+    post:
+      summary: Submit a partner landlord application
+      description: >-
+        Public and rate-limited (5 per hour per IP). Rejects a second submission from the same
+        email within 24 hours with 409 (it is not merged). Phone must be a Nigerian number
+        (`0803...`, `+234803...` or `234803...`) and is stored as `+234...`.
+      operationId: submitPartnerLandlordApplication
+      tags:
+        - Landlord
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartnerLandlordApplicationInput'
+      responses:
+        '201':
+          description: Application stored with status `pending`
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - success
+                  - application
+                  - message
+                properties:
+                  success:
+                    type: boolean
+                  application:
+                    type: object
+                    required:
+                      - id
+                      - status
+                      - createdAt
+                    properties:
+                      id:
+                        type: string
+                        example: PLA-0b9c1c0e-6e3a-4b0a-9a55-2d1c0f6b7a11
+                      status:
+                        $ref: '#/components/schemas/PartnerApplicationStatus'
+                      createdAt:
+                        type: string
+                        format: date-time
+                  message:
+                    type: string
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/partner-applications:
+    get:
+      summary: List partner landlord applications
+      description: Requires the `landlords:manage` permission. Newest first.
+      operationId: listPartnerApplicationsAdmin
+      tags:
+        - Landlord
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/PartnerApplicationStatus'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: Applications
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - applications
+                  - total
+                  - page
+                  - pageSize
+                properties:
+                  applications:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PartnerLandlordApplication'
+                  total:
+                    type: integer
+                  page:
+                    type: integer
+                  pageSize:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/partner-applications/{id}:
+    patch:
+      summary: Review a partner landlord application
+      description: >-
+        Sets status and/or notes and records the reviewing admin and time. At least one of
+        `status` or `notes` is required. Requires the `landlords:manage` permission.
+      operationId: updatePartnerApplicationAdmin
+      tags:
+        - Landlord
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  $ref: '#/components/schemas/PartnerApplicationStatus'
+                notes:
+                  type: string
+                  maxLength: 2000
+      responses:
+        '200':
+          description: Updated application
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - application
+                properties:
+                  application:
+                    $ref: '#/components/schemas/PartnerLandlordApplication'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/deals/{dealId}/rent-guarantee/quote:
+    post:
+      summary: Quote a rent guarantee for a deal
+      description: >-
+        Landlord-only, for deals they own (anyone else gets 404). Prices the policy via the
+        configured provider (`RENT_GUARANTEE_PROVIDER`) and stores it as `quoted`. Re-quoting
+        returns the outstanding quote (200); a deal with an active policy returns 409.
+      operationId: quoteRentGuarantee
+      tags:
+        - Rent Guarantee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Existing outstanding quote returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RentGuaranteePolicyResponse'
+        '201':
+          description: New quote created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RentGuaranteePolicyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '501':
+          description: The configured provider is not integrated yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/rent-guarantee/policies:
+    get:
+      summary: List the landlord's rent guarantee policies
+      description: Only policies for the caller's own deals.
+      operationId: listRentGuaranteePolicies
+      tags:
+        - Rent Guarantee
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Policies, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - policies
+                properties:
+                  policies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RentGuaranteePolicy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/rent-guarantee/policies/{id}/bind:
+    post:
+      summary: Bind (activate) a quoted policy
+      description: >-
+        quoted -> active. Idempotent: binding an already-active policy returns it unchanged,
+        and a repeated `Idempotency-Key` replays the first response. cancelled and claimed
+        policies return 409.
+      operationId: bindRentGuaranteePolicy
+      tags:
+        - Rent Guarantee
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RentGuaranteePolicyId'
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Active policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RentGuaranteePolicyResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/rent-guarantee/policies/{id}/cancel:
+    post:
+      summary: Cancel a quoted or active policy
+      description: quoted|active -> cancelled. Cancelled and claimed policies return 409.
+      operationId: cancelRentGuaranteePolicy
+      tags:
+        - Rent Guarantee
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RentGuaranteePolicyId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+      responses:
+        '200':
+          description: Cancelled policy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RentGuaranteePolicyResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/rent-guarantee/policies/{id}/claims:
+    post:
+      summary: File a claim against an active policy
+      description: >-
+        active -> claimed, recorded atomically with the claim. The amount cannot exceed the
+        deal's annual rent. Policies that are not active return 409.
+      operationId: fileRentGuaranteeClaim
+      tags:
+        - Rent Guarantee
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/RentGuaranteePolicyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - amountNgn
+                - reason
+              properties:
+                amountNgn:
+                  type: number
+                  exclusiveMinimum: 0
+                reason:
+                  type: string
+                  minLength: 10
+                  maxLength: 2000
+      responses:
+        '201':
+          description: Claim filed
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - claim
+                  - policy
+                properties:
+                  claim:
+                    $ref: '#/components/schemas/RentGuaranteeClaim'
+                  policy:
+                    $ref: '#/components/schemas/RentGuaranteePolicy'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
+    UserId:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    RentGuaranteePolicyId:
+      name: id
+      in: path
+      required: true
+      description: Rent guarantee policy ID
+      schema:
+        type: string
+        format: uuid
     InspectionId:
       name: id
       in: path
@@ -7133,7 +7691,260 @@ components:
             delegatee: { type: string }
             amountUsdc: { type: string }
 
+    ActiveSession:
+      type: object
+      required:
+        - id
+        - createdAt
+        - lastActiveAt
+        - expiresAt
+        - current
+      properties:
+        id:
+          type: string
+          format: uuid
+        family:
+          type: string
+          nullable: true
+          description: Refresh-token family (one per device login chain)
+        createdAt:
+          type: string
+          format: date-time
+        lastActiveAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        ip:
+          type: string
+          nullable: true
+        userAgent:
+          type: string
+          nullable: true
+        current:
+          type: boolean
+          description: True for the session making this request
+
+    RevokedSessions:
+      type: object
+      required:
+        - revoked
+      properties:
+        revoked:
+          type: integer
+          description: Number of sessions revoked
+
+    PartnerApplicationStatus:
+      type: string
+      enum:
+        - pending
+        - contacted
+        - approved
+        - rejected
+
+    PartnerLandlordApplicationInput:
+      type: object
+      required:
+        - fullName
+        - phone
+        - email
+        - propertyCount
+      properties:
+        fullName:
+          type: string
+          minLength: 2
+          maxLength: 100
+        phone:
+          type: string
+          description: Nigerian mobile number
+          example: '08031234567'
+        email:
+          type: string
+          format: email
+        propertyCount:
+          type: integer
+          minimum: 1
+        propertyLocations:
+          type: string
+          maxLength: 1000
+
+    PartnerLandlordApplication:
+      type: object
+      required:
+        - id
+        - fullName
+        - phone
+        - email
+        - propertyCount
+        - propertyLocations
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        fullName:
+          type: string
+        phone:
+          type: string
+          example: '+2348031234567'
+        email:
+          type: string
+          format: email
+        propertyCount:
+          type: integer
+        propertyLocations:
+          type: string
+        status:
+          $ref: '#/components/schemas/PartnerApplicationStatus'
+        reviewedBy:
+          type: string
+          nullable: true
+          description: User id of the reviewing admin
+        reviewedAt:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RentGuaranteePolicyStatus:
+      type: string
+      enum:
+        - quoted
+        - active
+        - cancelled
+        - claimed
+
+    RentGuaranteePolicy:
+      type: object
+      required:
+        - id
+        - dealId
+        - provider
+        - policyNumber
+        - premiumNgn
+        - coverageTermMonths
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        dealId:
+          type: string
+          format: uuid
+        provider:
+          type: string
+          example: mock
+        policyNumber:
+          type: string
+        premiumNgn:
+          type: number
+        coverageTermMonths:
+          type: integer
+        status:
+          $ref: '#/components/schemas/RentGuaranteePolicyStatus'
+        activatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancelledAt:
+          type: string
+          format: date-time
+          nullable: true
+        cancellationReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    RentGuaranteePolicyResponse:
+      type: object
+      required:
+        - policy
+      properties:
+        policy:
+          $ref: '#/components/schemas/RentGuaranteePolicy'
+
+    RentGuaranteeClaim:
+      type: object
+      required:
+        - id
+        - policyId
+        - amountNgn
+        - reason
+        - status
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        policyId:
+          type: string
+          format: uuid
+        amountNgn:
+          type: number
+        reason:
+          type: string
+        status:
+          type: string
+          enum:
+            - submitted
+            - approved
+            - rejected
+            - paid
+        createdAt:
+          type: string
+          format: date-time
+
   responses:
+    Forbidden:
+      description: Caller lacks the required permission
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "FORBIDDEN"
+              message: "Forbidden"
+
+    NotFound:
+      description: Resource not found (also returned for resources owned by someone else)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "NOT_FOUND"
+              message: "Not found"
+
+    Conflict:
+      description: Request conflicts with current state (duplicate submission or invalid status transition)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: "INVALID_STATE_TRANSITION"
+              message: "Cannot bind a policy that is cancelled"
+
     InspectionForbidden:
       description: Caller lacks the required permission, is not a verified inspector, or is not the assigned inspector
       content:
@@ -7302,5 +8113,9 @@ tags:
     description: Conversations, messages and message attachments (presigned uploads/downloads)
   - name: Inspections
     description: Property inspections (checklist + photos) feeding the listing trust score, and inspector verification
+  - name: Landlord
+    description: Partner landlord applications and landlord-facing operations
+  - name: Rent Guarantee
+    description: Landlord rent guarantee insurance - quotes, policy binding and claims
   - name: Governance
     description: Stake-weighted parameter governance proposals and voting (contracts/governance)
