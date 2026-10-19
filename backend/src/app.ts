@@ -164,6 +164,10 @@ import { authenticateToken } from "./middleware/auth.js";
 import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
+import {
+  createTenantCreditScoreRouter,
+  createAdminCreditScoreRouter,
+} from "./routes/tenantCreditScore.js";
 import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
 import { createMessagingRouter } from "./routes/messaging.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
@@ -219,6 +223,24 @@ import {
   createAdminInspectionsRouter,
   createAdminInspectorsRouter,
 } from "./routes/adminInspections.js";
+import {
+  createInspectorOnboardingRouter,
+  createAdminInspectorManagementRouter,
+} from "./routes/inspectorOnboarding.js";
+import {
+  PostgresLandlordPayoutScheduleStore,
+  initLandlordPayoutScheduleStore,
+} from "./models/landlordPayoutScheduleStore.js";
+import { createLandlordPayoutScheduleRouter } from "./routes/landlordPayoutSchedule.js";
+import {
+  PostgresTenantDataExportStore,
+  initTenantDataExportStore,
+} from "./models/tenantDataExportStore.js";
+import { createTenantDataExportRouter } from "./routes/tenantDataExport.js";
+import {
+  tenantDataExportJobHandler,
+  TENANT_DATA_EXPORT_JOB_NAME,
+} from "./jobs/tenantDataExportJob.js";
 import { createWhistleblowerReportsRouter } from "./routes/whistleblowerReports.js";
 import { createTenantOnboardingRouter } from "./routes/tenantOnboarding.js";
 import { createDocsRouter } from "./routes/docs.js";
@@ -525,6 +547,12 @@ export function createApp() {
     dataRetentionPurgeJobHandler,
   );
 
+  // Tenant personal-data export archives (#1899)
+  jobScheduler.registerHandler(
+    TENANT_DATA_EXPORT_JOB_NAME,
+    tenantDataExportJobHandler,
+  );
+
   // Centralized KYC Status Change Webhook Trigger
   kycStatusEmitter.on("statusChanged", (userId: string, status: any) => {
     const eventType =
@@ -574,6 +602,8 @@ export function createApp() {
   // Tenant Application Store — swap to Postgres when DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
+    initLandlordPayoutScheduleStore(new PostgresLandlordPayoutScheduleStore());
+    initTenantDataExportStore(new PostgresTenantDataExportStore());
     initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
     // ErasureService is the Postgres erasure request store (also used by the
     // data-retention job for expiry).
@@ -959,8 +989,12 @@ export function createApp() {
       "/api/admin/partner-applications",
       createAdminPartnerApplicationsRouter(),
     );
+    app.use("/api/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
+    app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
+    app.use("/api/tenant/data-export", createTenantDataExportRouter());
+    app.use("/api/admin/credit-score", createAdminCreditScoreRouter());
     app.use("/api/tenant/documents", createTenantDocumentsRouter());
     app.use("/api/messaging", createMessagingRouter());
     app.use(
@@ -976,6 +1010,8 @@ export function createApp() {
     app.use("/api/listings", createListingInspectionRouter());
     app.use("/api/admin/inspections", createAdminInspectionsRouter());
     app.use("/api/admin/inspectors", createAdminInspectorsRouter());
+    app.use("/api/admin/inspectors", createAdminInspectorManagementRouter());
+    app.use("/api/inspector", createInspectorOnboardingRouter());
   }
 
   app.use("/api/v1/wallet", createWalletRouter(walletService));
@@ -1045,6 +1081,8 @@ export function createApp() {
   app.use("/api/v1/listings", createListingInspectionRouter());
   app.use("/api/v1/admin/inspections", createAdminInspectionsRouter());
   app.use("/api/v1/admin/inspectors", createAdminInspectorsRouter());
+  app.use("/api/v1/admin/inspectors", createAdminInspectorManagementRouter());
+  app.use("/api/v1/inspector", createInspectorOnboardingRouter());
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
   app.use(
@@ -1074,9 +1112,13 @@ export function createApp() {
     "/api/v1/admin/partner-applications",
     createAdminPartnerApplicationsRouter(),
   );
+  app.use("/api/v1/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
+  app.use("/api/v1/tenant/credit-score", createTenantCreditScoreRouter());
+  app.use("/api/v1/tenant/data-export", createTenantDataExportRouter());
+  app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());
   app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
   app.use("/api/v1/messaging", createMessagingRouter());
   app.use(
