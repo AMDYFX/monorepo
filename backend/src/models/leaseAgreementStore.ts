@@ -14,6 +14,8 @@ interface LeaseAgreementStorePort {
   markTenantSigned(leaseId: string, signatureRef: string): Promise<LeaseAgreement | null>
   markLandlordSigned(leaseId: string, signatureRef: string): Promise<LeaseAgreement | null>
   void(leaseId: string): Promise<LeaseAgreement | null>
+  /** Test helper: overwrite the recorded document hash (in-memory adapter only). */
+  setDocumentHashForTest(leaseId: string, documentHash: string): Promise<void>
   clear(): Promise<void>
 }
 
@@ -27,6 +29,7 @@ class InMemoryLeaseAgreementStore implements LeaseAgreementStorePort {
       leaseId: randomUUID(),
       dealId: input.dealId,
       documentKey: input.documentKey,
+      documentHash: input.documentHash,
       status: LeaseStatus.DRAFT,
       createdAt: now,
       updatedAt: now,
@@ -91,6 +94,12 @@ class InMemoryLeaseAgreementStore implements LeaseAgreementStorePort {
     return lease
   }
 
+  async setDocumentHashForTest(leaseId: string, documentHash: string): Promise<void> {
+    const lease = this.leases.get(leaseId)
+    if (!lease) throw new Error(`Lease ${leaseId} not found`)
+    lease.documentHash = documentHash
+  }
+
   async clear(): Promise<void> {
     this.leases.clear()
     this.dealIndex.clear()
@@ -101,6 +110,7 @@ type LeaseRow = {
   lease_id: string
   deal_id: string
   document_key: string
+  document_hash: string | null
   status: LeaseStatus
   tenant_signed_at: Date | null
   landlord_signed_at: Date | null
@@ -128,10 +138,10 @@ class PostgresLeaseAgreementStore implements LeaseAgreementStorePort {
     const leaseId = randomUUID()
 
     const { rows } = await pool.query(
-      `INSERT INTO lease_agreements (lease_id, deal_id, document_key, status)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO lease_agreements (lease_id, deal_id, document_key, document_hash, status)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [leaseId, input.dealId, input.documentKey, LeaseStatus.DRAFT],
+      [leaseId, input.dealId, input.documentKey, input.documentHash ?? null, LeaseStatus.DRAFT],
     )
 
     return this.mapRow(rows[0] as LeaseRow)
@@ -211,6 +221,17 @@ class PostgresLeaseAgreementStore implements LeaseAgreementStorePort {
     return this.mapRow(rows[0] as LeaseRow)
   }
 
+  async setDocumentHashForTest(leaseId: string, documentHash: string): Promise<void> {
+    const pool = await this.pool()
+    if (process.env.NODE_ENV !== 'test') {
+      throw new Error('setDocumentHashForTest is only supported in test env')
+    }
+    await pool.query('UPDATE lease_agreements SET document_hash = $2 WHERE lease_id = $1', [
+      leaseId,
+      documentHash,
+    ])
+  }
+
   async clear(): Promise<void> {
     const pool = await this.pool()
     if (process.env.NODE_ENV !== 'test') {
@@ -224,6 +245,7 @@ class PostgresLeaseAgreementStore implements LeaseAgreementStorePort {
       leaseId: row.lease_id,
       dealId: row.deal_id,
       documentKey: row.document_key,
+      documentHash: row.document_hash ?? undefined,
       status: row.status,
       tenantSignedAt: row.tenant_signed_at ? new Date(row.tenant_signed_at) : undefined,
       landlordSignedAt: row.landlord_signed_at ? new Date(row.landlord_signed_at) : undefined,
@@ -272,6 +294,10 @@ class HybridLeaseAgreementStore implements LeaseAgreementStorePort {
 
   async void(leaseId: string): Promise<LeaseAgreement | null> {
     return (await this.adapter()).void(leaseId)
+  }
+
+  async setDocumentHashForTest(leaseId: string, documentHash: string): Promise<void> {
+    return (await this.adapter()).setDocumentHashForTest(leaseId, documentHash)
   }
 
   async clear(): Promise<void> {

@@ -156,6 +156,8 @@ export type AuditEventType =
   | 'AGREEMENT_SIGNATURE_REQUESTED'
   | 'AGREEMENT_SIGNED'
   | 'AGREEMENT_FULLY_EXECUTED'
+  // Lease integrity / signing (#1960)
+  | 'LEASE_SIGNED'
   // Landlord verification
   | 'LANDLORD_VERIFICATION_UPDATED'
   // Messaging attachments

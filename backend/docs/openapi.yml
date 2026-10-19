@@ -1454,6 +1454,81 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/payments/{paymentId}/full-payment/preview:
+    get:
+      summary: Preview a full early-settlement payment
+      description: >-
+        Computes the payout breakdown for paying the whole outstanding balance of the given deal,
+        without mutating anything. `paymentId` is a DEAL id (the tenant payments page passes the
+        selected deal). Returns 404 when the deal is missing or belongs to another tenant. The
+        response is the bare `FullPaymentPreview` object.
+      operationId: previewFullPayment
+      tags:
+        - Payments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Full payment preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FullPaymentPreview'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/payments/{paymentId}/full-payment/confirm:
+    post:
+      summary: Confirm a full early-settlement payment
+      description: >-
+        Settles the full-payment incentive (writing settlement ledger entries) and returns a
+        receipt. Requires the `x-idempotency-key` header; replaying the same key returns the
+        cached receipt. `paymentId` is a DEAL id. Returns 404 when the deal is missing or belongs
+        to another tenant. The response is the bare `FullPaymentReceipt` object.
+      operationId: confirmFullPayment
+      tags:
+        - Payments
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: x-idempotency-key
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Full payment confirmed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FullPaymentReceipt'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/payments/confirm:
     post:
       summary: Confirm a payment and write a USDC receipt on-chain
@@ -4060,6 +4135,161 @@ paths:
         default:
           $ref: "#/components/responses/Error"
 
+  /api/v1/landlord/analytics:
+    get:
+      summary: Get landlord analytics
+      description: >-
+        Landlord-only analytics for the caller's own properties: monthly occupancy, expected vs
+        collected revenue, payment timeliness and vacancy metrics. Optionally scoped to a single
+        `propertyId` with a `startDate`/`endDate` window (max 24 months, default last 12 months).
+        The response is the bare `LandlordAnalytics` object.
+      operationId: getLandlordAnalytics
+      tags:
+        - Landlord
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: propertyId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Landlord analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LandlordAnalytics'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/lease/current:
+    get:
+      summary: Get the tenant's current lease
+      description: >-
+        Returns a summary of the caller's active lease (deal in `active` status), including the
+        property, monthly payment, next payment date, progress and landlord name. Returns 404
+        when the tenant has no active lease.
+      operationId: getTenantCurrentLease
+      tags:
+        - Tenant Lease
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current lease summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/TenantCurrentLease'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/deals/{dealId}/lease:
+    get:
+      summary: Get full lease details for a deal
+      description: >-
+        Returns the property, lease terms, landlord contact and payment progress for one of the
+        caller's deals. A deal belonging to another tenant (or that does not exist) returns 404.
+      operationId: getTenantLeaseDetails
+      tags:
+        - Tenant Lease
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lease details
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/TenantLeaseDetails'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/deals/{dealId}/documents:
+    get:
+      summary: List lease documents for a deal
+      description: >-
+        Returns the caller's documents attached to the given deal. A deal belonging to another
+        tenant (or that does not exist) returns 404.
+      operationId: getTenantLeaseDocuments
+      tags:
+        - Tenant Lease
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lease documents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TenantLeaseDocument'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
   /api/v1/user/erasure:
     post:
       summary: Request account erasure
@@ -5634,6 +5864,145 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/deals/{dealId}/lease/integrity:
+    get:
+      summary: Check lease document integrity
+      description: >-
+        Re-hashes the stored lease document and compares it against the hash recorded when the
+        lease was generated. Only parties to the deal (tenant or landlord) may call it; anyone
+        else receives 403 and a deal with no lease receives 404. `valid` is false when the
+        document bytes no longer match the recorded hash.
+      operationId: checkLeaseIntegrity
+      tags:
+        - Lease Agreements
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Integrity result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [documentHash, documentVersion, lastModified, valid]
+                    properties:
+                      documentHash:
+                        type: string
+                        description: Hash computed from the currently stored document.
+                      documentVersion:
+                        type: string
+                      lastModified:
+                        type: string
+                        format: date-time
+                      valid:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/deals/{dealId}/lease/sign:
+    post:
+      summary: Sign the lease as a party
+      description: >-
+        Records the caller's signature against the current document hash. The caller must be the
+        tenant or landlord of the deal. Signing is refused with 409 when the document integrity
+        check fails or the lease is voided, and is idempotent per party (re-signing returns the
+        original signature). Once both parties have signed the lease moves to `fully_signed`.
+      operationId: signLeaseAgreement
+      tags:
+        - Lease Agreements
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: dealId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [signerName, signDate, acknowledged]
+              properties:
+                signerName:
+                  type: string
+                  maxLength: 200
+                signDate:
+                  type: string
+                  description: Signature date supplied by the client (yyyy-MM-dd).
+                acknowledged:
+                  type: boolean
+                  description: Must be true; the signer acknowledged the lease terms.
+      responses:
+        '200':
+          description: Signature recorded (or the existing signature returned)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    required: [success, leaseId, signedAt, documentHash, signerRole]
+                    properties:
+                      success:
+                        type: boolean
+                      leaseId:
+                        type: string
+                      signedAt:
+                        type: string
+                        format: date-time
+                      documentHash:
+                        type: string
+                      signerRole:
+                        type: string
+                        enum: [tenant, landlord]
+                      status:
+                        type: string
+                      idempotent:
+                        type: boolean
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Document integrity check failed or lease is voided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         default:
           $ref: '#/components/responses/Error'
 
@@ -7385,6 +7754,220 @@ components:
         type: string
         format: uuid
   schemas:
+    PayoutBreakdown:
+      type: object
+      description: Payout split for a full early-settlement payment (#1961)
+      required: [totalAmount, platformShare, reporterShare, landlordAmount, currency]
+      properties:
+        totalAmount:
+          type: integer
+        platformShare:
+          type: integer
+        reporterShare:
+          type: integer
+          nullable: true
+          description: Null when the property has no reporter.
+        landlordAmount:
+          type: integer
+        currency:
+          type: string
+    FullPaymentPreview:
+      type: object
+      description: Full-payment preview (#1961) — returned bare, not wrapped.
+      required: [paymentId, breakdown, expiresAt]
+      properties:
+        paymentId:
+          type: string
+        breakdown:
+          $ref: '#/components/schemas/PayoutBreakdown'
+        expiresAt:
+          type: string
+          format: date-time
+    FullPaymentReceipt:
+      type: object
+      description: Full-payment receipt (#1961) — returned bare, not wrapped.
+      required: [paymentId, reference, breakdown, paidAt, status]
+      properties:
+        paymentId:
+          type: string
+        reference:
+          type: string
+        breakdown:
+          $ref: '#/components/schemas/PayoutBreakdown'
+        paidAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [confirmed]
+    LandlordAnalytics:
+      type: object
+      description: Landlord analytics (#1958) — returned bare, not wrapped.
+      required: [occupancyTrend, revenueBreakdown, paymentTrends, vacancyMetrics]
+      properties:
+        occupancyTrend:
+          type: array
+          items:
+            type: object
+            required: [date, rate]
+            properties:
+              date:
+                type: string
+                description: Month key, e.g. 2026-01.
+              rate:
+                type: integer
+                description: Occupancy rate as a whole percentage (0-100).
+        revenueBreakdown:
+          type: array
+          items:
+            type: object
+            required: [month, expected, collected]
+            properties:
+              month:
+                type: string
+              expected:
+                type: integer
+              collected:
+                type: integer
+        paymentTrends:
+          type: array
+          items:
+            type: object
+            required: [date, onTime, late, missed]
+            properties:
+              date:
+                type: string
+                format: date
+              onTime:
+                type: integer
+              late:
+                type: integer
+              missed:
+                type: integer
+        vacancyMetrics:
+          type: object
+          required: [averageTimeToFill, currentVacancyCount]
+          properties:
+            averageTimeToFill:
+              type: integer
+              description: Mean days between a property becoming available and being filled.
+            currentVacancyCount:
+              type: integer
+    TenantCurrentLease:
+      type: object
+      description: Summary of a tenant's active lease (#1959)
+      required:
+        [dealId, property, location, monthlyPayment, nextPaymentDate, leaseEnd, totalPaid, totalOwed, progress, landlord]
+      properties:
+        dealId:
+          type: string
+        property:
+          type: string
+        location:
+          type: string
+        monthlyPayment:
+          type: integer
+        nextPaymentDate:
+          type: string
+          format: date-time
+        leaseEnd:
+          type: string
+          format: date-time
+        totalPaid:
+          type: integer
+        totalOwed:
+          type: integer
+        progress:
+          type: integer
+          description: Payment progress as a whole percentage (0-100).
+        landlord:
+          type: object
+          required: [name]
+          properties:
+            name:
+              type: string
+    TenantLeaseDetails:
+      type: object
+      description: Full lease details for one deal (#1959)
+      required: [dealId, property, lease, landlord, paymentProgress]
+      properties:
+        dealId:
+          type: string
+        property:
+          type: object
+          required: [title, address, beds, baths, sqm]
+          properties:
+            title:
+              type: string
+            address:
+              type: string
+            beds:
+              type: integer
+            baths:
+              type: integer
+            sqm:
+              type: integer
+        lease:
+          type: object
+          required: [startDate, endDate, duration, monthlyPayment, status]
+          properties:
+            startDate:
+              type: string
+              format: date-time
+            endDate:
+              type: string
+              format: date-time
+            duration:
+              type: string
+            monthlyPayment:
+              type: integer
+            status:
+              type: string
+        landlord:
+          type: object
+          required: [name, phone, email]
+          properties:
+            name:
+              type: string
+            company:
+              type: string
+            phone:
+              type: string
+            email:
+              type: string
+        paymentProgress:
+          type: object
+          required: [totalPaid, totalOwed, paymentsCompleted, totalPayments]
+          properties:
+            totalPaid:
+              type: integer
+            totalOwed:
+              type: integer
+            paymentsCompleted:
+              type: integer
+            totalPayments:
+              type: integer
+    TenantLeaseDocument:
+      type: object
+      description: A lease document attached to a deal (#1959)
+      required: [id, name, date, type, size, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        date:
+          type: string
+          format: date-time
+        type:
+          type: string
+        size:
+          type: string
+        status:
+          type: string
+        url:
+          type: string
+          format: uri
     InspectionJob:
       type: object
       description: Inspection job board entry (#1903)
