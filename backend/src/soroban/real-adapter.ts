@@ -25,6 +25,7 @@ import {
   RecordRentToOwnEquityPaymentParams,
   RentToOwnDealActionParams,
   OraclePriceReading,
+  TenantReputationRecord,
 } from './adapter.js'
 import { SorobanConfig } from './client.js'
 import { RawReceiptEvent } from '../indexer/event-parser.js'
@@ -1561,6 +1562,113 @@ export class RealSorobanAdapter implements SorobanAdapter {
       dealId: params.dealId,
       contractDealId: params.contractDealId,
       totalPaymentsRequired: params.totalPaymentsRequired,
+    })
+  }
+
+  /**
+   * Admin/operator operation: tenant_reputation `update_reputation`.
+   * ABI: update_reputation(admin: Address, tenant_id: String, composite_score: u32,
+   *   payment_score: u32, property_care_score: u32, communication_score: u32,
+   *   total_ratings: u32). `record.lastUpdated` is ignored; the contract stamps it.
+   */
+  async updateTenantReputation(tenantId: string, record: TenantReputationRecord): Promise<void> {
+    return tracer.startActiveSpan('RealSorobanAdapter.updateTenantReputation', async (span) => {
+      span.setAttribute('soroban.tenant_id', tenantId)
+      const contractId = this.config.tenantReputationId
+      try {
+        if (!contractId) {
+          throw new ConfigurationError('SOROBAN_TENANT_REPUTATION_ID not configured for tenant reputation update')
+        }
+        if (!this.config.adminSecret) {
+          throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for tenant reputation update')
+        }
+
+        const adminAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+        const args: xdr.ScVal[] = [
+          nativeToScVal(new Address(adminAddress)),
+          nativeToScVal(tenantId, { type: 'string' }),
+          nativeToScVal(record.compositeScore, { type: 'u32' }),
+          nativeToScVal(record.paymentScore, { type: 'u32' }),
+          nativeToScVal(record.propertyCareScore, { type: 'u32' }),
+          nativeToScVal(record.communicationScore, { type: 'u32' }),
+          nativeToScVal(record.totalRatings, { type: 'u32' }),
+        ]
+
+        await this.adminSigningService.executeAdminOperation({
+          contractId,
+          operation: 'update_reputation',
+          args,
+          networkPassphrase: this.config.networkPassphrase,
+          adminSecret: this.config.adminSecret,
+          server: this.server,
+        })
+
+        logger.info('Tenant reputation updated on-chain', {
+          tenantId,
+          compositeScore: record.compositeScore,
+        })
+        span.setStatus({ code: SpanStatusCode.OK })
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: err instanceof Error ? err.message : String(err) })
+        if (err instanceof Error) span.recordException(err)
+        if (err instanceof SorobanError) throw err
+        throw new ContractError(
+          `Failed to update tenant reputation for ${tenantId}`,
+          contractId ?? 'unknown',
+          'update_reputation',
+          err,
+        )
+      } finally {
+        span.end()
+      }
+    })
+  }
+
+  /**
+   * Read-only: tenant_reputation `get_reputation(tenant_id: String) -> Option<TenantReputation>`.
+   * Returns null when the tenant has no on-chain record.
+   */
+  async getTenantReputation(tenantId: string): Promise<TenantReputationRecord | null> {
+    return tracer.startActiveSpan('RealSorobanAdapter.getTenantReputation', async (span) => {
+      span.setAttribute('soroban.tenant_id', tenantId)
+      const contractId = this.config.tenantReputationId
+      try {
+        if (!contractId) {
+          throw new ConfigurationError('SOROBAN_TENANT_REPUTATION_ID not configured for get_reputation')
+        }
+
+        const result = await this.invokeReadOnly(contractId, 'get_reputation', [
+          nativeToScVal(tenantId, { type: 'string' }),
+        ])
+        const native = result ? (scValToNative(result) as Record<string, unknown> | null | undefined) : null
+        if (!native || typeof native !== 'object') {
+          span.setStatus({ code: SpanStatusCode.OK })
+          return null
+        }
+
+        const record: TenantReputationRecord = {
+          compositeScore: Number(native.composite_score ?? 0),
+          paymentScore: Number(native.payment_score ?? 0),
+          propertyCareScore: Number(native.property_care_score ?? 0),
+          communicationScore: Number(native.communication_score ?? 0),
+          totalRatings: Number(native.total_ratings ?? 0),
+          lastUpdated: BigInt((native.last_updated as bigint | number | string | undefined) ?? 0),
+        }
+        span.setStatus({ code: SpanStatusCode.OK })
+        return record
+      } catch (err) {
+        span.setStatus({ code: SpanStatusCode.ERROR, message: err instanceof Error ? err.message : String(err) })
+        if (err instanceof Error) span.recordException(err)
+        if (err instanceof SorobanError) throw err
+        throw new ContractError(
+          `Failed to get tenant reputation for ${tenantId}`,
+          contractId ?? 'unknown',
+          'get_reputation',
+          err,
+        )
+      } finally {
+        span.end()
+      }
     })
   }
 

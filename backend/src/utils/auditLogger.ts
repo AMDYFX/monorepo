@@ -49,6 +49,8 @@ export type AuditEventType =
   | "AUTH_LOGIN_FAILED"
   | "AUTH_LOGOUT"
   | "AUTH_LOGOUT_ALL"
+  | "AUTH_SESSION_REVOKED"
+  | "ADMIN_USER_SESSIONS_REVOKED"
   | "AUTH_WALLET_CHALLENGE_ISSUED"
   | "AUTH_WALLET_LOGIN_SUCCESS"
   | "AUTH_WALLET_LOGIN_FAILED"
@@ -107,6 +109,7 @@ export type AuditEventType =
   // Rent guarantee insurance
   | 'INSURANCE_QUOTE_REQUESTED'
   | 'INSURANCE_POLICY_PURCHASED'
+  | 'INSURANCE_POLICY_CANCELLED'
   | 'INSURANCE_CLAIM_FILED'
   // Tenant document vault
   | 'DOCUMENT_UPLOAD_URL_ISSUED'
@@ -372,6 +375,20 @@ export function auditAuthLogoutAll(
   metadata: { userId?: string; sessionCount?: number } = {},
 ): void {
   auditLog('AUTH_LOGOUT_ALL', extractAuditContext(req, 'user'), metadata)
+}
+
+export function auditAuthSessionRevoked(
+  req: Request,
+  metadata: { userId?: string; sessionId?: string; sessionCount?: number; others?: boolean } = {},
+): void {
+  auditLog('AUTH_SESSION_REVOKED', extractAuditContext(req, 'user'), metadata)
+}
+
+export function auditAdminUserSessionsRevoked(
+  req: Request,
+  metadata: { targetUserId: string; sessionCount: number },
+): void {
+  auditLog('ADMIN_USER_SESSIONS_REVOKED', extractAuditContext(req, 'admin'), metadata)
 }
 
 export function auditAuthWalletChallengeIssued(

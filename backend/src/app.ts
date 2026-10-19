@@ -127,6 +127,20 @@ import {
 import { createComprehensiveRateLimiter } from "./middleware/comprehensiveRateLimit.js";
 import { createWhistleblowerApplicationsRouter } from "./routes/whistleblowerApplications.js";
 import { createAdminWhistleblowerApplicationsRouter } from "./routes/adminWhistleblowerApplications.js";
+import { createAdminUserSessionsRouter } from "./routes/adminUserSessions.js";
+import { createRentGuaranteeRouter } from "./routes/rentGuarantee.js";
+import {
+  initRentGuaranteeStore,
+  PostgresRentGuaranteeStore,
+} from "./models/rentGuaranteeStore.js";
+import {
+  createPartnerLandlordApplicationsRouter,
+  createAdminPartnerApplicationsRouter,
+} from "./routes/partnerLandlordApplications.js";
+import {
+  initPartnerLandlordApplicationStore,
+  PostgresPartnerLandlordApplicationStore,
+} from "./models/partnerLandlordApplicationStore.js";
 import { createAdminAnalyticsRouter } from "./routes/adminAnalytics.js";
 import { createConversionProviderFromEnv } from "./services/conversionProviderFactory.js";
 import { ConversionRateService } from "./services/conversionRateService.js";
@@ -571,6 +585,10 @@ export function createApp() {
     initUnderwritingDecisionTraceStore(
       new PostgresUnderwritingDecisionTraceStore(),
     );
+    initPartnerLandlordApplicationStore(
+      new PostgresPartnerLandlordApplicationStore(),
+    );
+    initRentGuaranteeStore(new PostgresRentGuaranteeStore());
     initPropertyInspectionStore(new PostgresPropertyInspectionStore());
     initInspectorProfileStore(new PostgresInspectorProfileStore());
   }
@@ -858,6 +876,7 @@ export function createApp() {
     app.use("/api/deposits", createDepositsRouter(conversionService));
     app.use("/api", createComprehensiveRateLimiter());
     app.use("/api/auth", authRouter);
+    app.use("/api/admin/users", createAdminUserSessionsRouter());
     app.use("/api", createBalanceRouter(sorobanAdapter));
     app.use("/api", createReceiptsRouter(receiptRepo));
     app.use("/api/wallet", createWalletRouter(walletService));
@@ -897,6 +916,7 @@ export function createApp() {
     app.use("/api/admin/fraud", createAdminFraudRouter());
     app.use("/api/admin/outbox", createAdminOutboxRouter(sorobanAdapter));
     app.use("/api/admin", createAdminAuditRouter());
+    app.use("/api", createRentGuaranteeRouter());
     app.use("/api/deals", createDealsRouter());
     app.use("/api", createLeaseAgreementsRouter());
     app.use("/api/whistleblower", createWhistleblowerRouter(earningsService));
@@ -931,6 +951,14 @@ export function createApp() {
     app.use("/api/deposits", createDepositsRouter(conversionService));
     app.use("/api", createPropertyPhotosRouter());
     app.use("/api/landlord/properties", createLandlordPropertiesRouter());
+    app.use(
+      "/api/landlord/partner-application",
+      createPartnerLandlordApplicationsRouter(),
+    );
+    app.use(
+      "/api/admin/partner-applications",
+      createAdminPartnerApplicationsRouter(),
+    );
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
     app.use("/api/tenant/documents", createTenantDocumentsRouter());
@@ -988,6 +1016,8 @@ export function createApp() {
   app.use("/api/v1/admin/outbox", createAdminOutboxRouter(sorobanAdapter));
   app.use("/api/v1/admin", createAdminAuditRouter());
   app.use("/api/v1/admin/audit-logs", createAdminAuditLogsRouter());
+  app.use("/api/v1/admin/users", createAdminUserSessionsRouter());
+  app.use("/api/v1", createRentGuaranteeRouter());
   app.use("/api/v1/deals", createDealsRouter());
   app.use("/api/v1", createLeaseAgreementsRouter());
   app.use("/api/v1/whistleblower", createWhistleblowerRouter(earningsService));
@@ -1036,6 +1066,14 @@ export function createApp() {
   app.use("/api/v1", createPropertyPhotosRouter());
   app.use("/api/v1/landlord/properties", createLandlordPropertiesRouter());
   app.use("/api/v1/landlords", createLandlordVerificationRouter());
+  app.use(
+    "/api/v1/landlord/partner-application",
+    createPartnerLandlordApplicationsRouter(),
+  );
+  app.use(
+    "/api/v1/admin/partner-applications",
+    createAdminPartnerApplicationsRouter(),
+  );
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
