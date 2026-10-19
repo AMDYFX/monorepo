@@ -24,7 +24,7 @@ export const withdrawalResponseSchema = z.object({
   success: z.boolean().optional(),
   id: z.string(),
   amountNgn: z.number(),
-  status: z.enum(['pending', 'approved', 'rejected', 'confirmed', 'failed', 'reversed']),
+  status: z.enum(['pending', 'approved', 'processing', 'rejected', 'confirmed', 'failed', 'reversed']),
   bankAccount: bankAccountDetailsSchema,
   reference: z.string(),
   createdAt: z.string(),

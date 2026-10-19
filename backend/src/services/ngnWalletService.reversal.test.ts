@@ -4,6 +4,8 @@ import { userRiskStateStore } from '../models/userRiskStateStore.js'
 import { depositStore } from '../models/depositStore.js'
 import { AppError } from '../errors/AppError.js'
 import { ErrorCode } from '../errors/errorCodes.js'
+import { ngnWalletStore } from '../models/ngnWalletStore.js'
+import { seedNgnWalletFixture } from '../test-fixtures/ngnWalletFixtures.js'
 
 describe('NgnWalletService - Reversal & Freeze Logic', () => {
   let service: NgnWalletService
@@ -14,6 +16,8 @@ describe('NgnWalletService - Reversal & Freeze Logic', () => {
     service = new NgnWalletService()
     userRiskStateStore.clear()
     await depositStore.clear()
+    await ngnWalletStore.clear()
+    await seedNgnWalletFixture(testUserId)
   })
 
   describe('processDepositReversal', () => {

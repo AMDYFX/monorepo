@@ -11,6 +11,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:backup": "tsx src/scripts/backup.ts",
     "db:restore": "tsx src/scripts/restore.ts",
+    "db:repair-demo-ledger": "tsx src/scripts/repairDemoLedgerEntries.ts",
     "openapi:validate": "redocly lint docs/openapi.yml",
     "openapi:preview": "redocly preview-docs docs/openapi.yml",
     "test": "vitest run",

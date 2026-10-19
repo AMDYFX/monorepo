@@ -7,10 +7,11 @@ import {
   flushOfflineQueue,
   enqueueOfflineRequest,
 } from "./offline-queue";
+import { newIdempotencyKey } from "./idempotencyKey";
 
 const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
 
-export { flushOfflineQueue, enqueueOfflineRequest };
+export { flushOfflineQueue, enqueueOfflineRequest, newIdempotencyKey };
 
 export async function flushPaymentQueue() {
   return flushOfflineQueue(baseUrl);
@@ -22,11 +23,4 @@ export function paymentActionFingerprint(
   body: unknown,
 ) {
   return `${op}:${JSON.stringify(body)}`;
-}
-
-export function newIdempotencyKey() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `idem_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }

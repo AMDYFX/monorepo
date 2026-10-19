@@ -1,6 +1,6 @@
 import type { BackendErrorResponse } from './errors'
 import { enqueueOfflineRequest } from './offline-queue'
-import { newIdempotencyKey } from './paymentOffline'
+import { newIdempotencyKey } from './idempotencyKey'
 import { apiRateLimiters } from './rate-limiter'
 
 const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:4000";
@@ -186,8 +186,10 @@ export async function apiFetch<T>(
 
     const res = await fetch(`${baseUrl}${apiVersion}${path}`, {
       cache: "no-store",
-      headers,
       ...options,
+      // Merged headers go last. A spread after them would replace the auth,
+      // CSRF and Idempotency-Key headers whenever the caller passed `headers`.
+      headers,
     });
 
     if (!res.ok) {

@@ -57,6 +57,11 @@ export interface ExecutePayoutResult {
   providerStatus?: string
 }
 
+export interface VerifyPayoutResult {
+  status: 'confirmed' | 'failed' | 'pending'
+  providerStatus?: string
+}
+
 export interface PaymentProvider {
   readonly name: string
 
@@ -72,6 +77,12 @@ export interface PaymentProvider {
   mapStatus(input: MapStatusInput): InternalPaymentStatus
 
   executePayout?(input: ExecutePayoutInput): Promise<ExecutePayoutResult>
+
+  /**
+   * Asks the PSP what happened to a payout we already submitted, looked up by
+   * our payout reference. Used for stuck payouts. Never resubmits a transfer.
+   */
+  verifyPayout?(input: { internalRef: string }): Promise<VerifyPayoutResult>
 
   resolveBankAccount?(accountNumber: string, bankCode: string): Promise<{
     accountName: string

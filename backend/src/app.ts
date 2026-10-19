@@ -75,6 +75,7 @@ import { createReceiptsRouter } from "./routes/receiptsRoute.js";
 import { getPool, getPoolMetricsForOtel } from "./db.js";
 import { StakingService } from "./services/stakingService.js";
 import { StakingFinalizer } from "./jobs/stakingFinalizer.js";
+import { WithdrawalPayoutWorker } from "./jobs/withdrawalPayoutWorker.js";
 import { LatePaymentJob } from "./jobs/latePaymentJob.js";
 import { DataRetentionJob } from "./jobs/dataRetentionJob.js";
 import { initOutboxStore, PostgresOutboxStore } from "./outbox/store.js";
@@ -110,7 +111,10 @@ import {
 } from "./jobs/scheduler/index.js";
 import { createAdminJobsRouter } from "./routes/adminJobs.js";
 import { createAdminQuotaRouter } from "./routes/adminQuota.js";
-import { getNotificationService } from "./notifications/index.js";
+import {
+  getNotificationService,
+  NotificationChannel,
+} from "./notifications/index.js";
 import { createWebhookReplayRouter } from "./routes/webhookReplay.js";
 import {
   PostgresWebhookReplayStore,
@@ -194,13 +198,9 @@ import {
   initTenantApplicationStore,
 } from "./models/tenantApplicationStore.js";
 import {
-  PostgresSupportMessageStore,
-  initSupportMessageStore,
-} from "./models/supportMessageStore.js";
-import {
-  PostgresApartmentReviewStore,
-  initApartmentReviewStore,
-} from "./models/apartmentReviewStore.js";
+  PostgresUserRiskStateStore,
+  initUserRiskStateStore,
+} from "./models/userRiskStateStore.js";
 import {
   PostgresTenantDocumentVaultStore,
   initTenantDocumentVaultStore,
@@ -459,6 +459,27 @@ export function createApp() {
   stakingFinalizer.start();
   workers.push(stakingFinalizer);
 
+  // Approved NGN withdrawals are paid out here (#1945). Not started in tests.
+  const withdrawalPayoutWorker = new WithdrawalPayoutWorker(ngnWalletService, {
+    pollIntervalMs: parseInt(
+      process.env.WITHDRAWAL_PAYOUT_POLL_MS ?? String(30 * 1000),
+      10,
+    ),
+    notifyFailure: async (userId, withdrawalId, reason) => {
+      await getNotificationService().enqueue({
+        channel: NotificationChannel.PUSH,
+        recipient: userId,
+        subject: "Withdrawal failed",
+        body: `Your withdrawal ${withdrawalId} could not be paid out (${reason}). The funds are back in your balance.`,
+        metadata: { withdrawalId },
+      });
+    },
+  });
+  if (env.NODE_ENV !== "test") {
+    withdrawalPayoutWorker.start();
+    workers.push(withdrawalPayoutWorker);
+  }
+
   const latePaymentJob = new LatePaymentJob(
     parseInt(
       process.env.LATE_PAYMENT_JOB_POLL_MS ?? String(6 * 60 * 60 * 1000),
@@ -612,8 +633,8 @@ export function createApp() {
   // Tenant Application Store — swap to Postgres when DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
-    initSupportMessageStore(new PostgresSupportMessageStore());
-    initApartmentReviewStore(new PostgresApartmentReviewStore());
+    // Account freezes must survive restarts and apply across instances (#1948)
+    initUserRiskStateStore(new PostgresUserRiskStateStore());
     initLandlordPayoutScheduleStore(new PostgresLandlordPayoutScheduleStore());
     initTenantDataExportStore(new PostgresTenantDataExportStore());
     initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
