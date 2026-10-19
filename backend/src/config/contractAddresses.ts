@@ -22,6 +22,7 @@ export const CONTRACT_ENV_VARS = {
   rentWallet: 'SOROBAN_RENT_WALLET_ID',
   slashingModule: 'SOROBAN_SLASHING_MODULE_ID',
   bondCollateral: 'SOROBAN_BOND_COLLATERAL_ID',
+  vestingSchedule: 'SOROBAN_VESTING_SCHEDULE_ID',
 } as const
 
 export type ContractName = keyof typeof CONTRACT_ENV_VARS

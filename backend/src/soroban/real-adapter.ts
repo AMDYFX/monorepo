@@ -26,7 +26,10 @@ import {
   RentToOwnDealActionParams,
   OraclePriceReading,
   TenantReputationRecord,
+  CreateVestingScheduleParams,
+  VestingScheduleRecord,
 } from './adapter.js'
+import { assertVestingClaimXdr, buildVestingClaimOperation } from './vestingClaim.js'
 import { SorobanConfig } from './client.js'
 import { RawReceiptEvent } from '../indexer/event-parser.js'
 import { logger } from '../utils/logger.js'
@@ -3053,6 +3056,166 @@ export class RealSorobanAdapter implements SorobanAdapter {
         err,
       )
     }
+  }
+
+  // ── vesting_schedule contract ───────────────────────────────────────────────
+
+  private getVestingScheduleId(): string {
+    if (!this.config.vestingScheduleId) {
+      throw new ConfigurationError('SOROBAN_VESTING_SCHEDULE_ID not configured')
+    }
+    return this.config.vestingScheduleId
+  }
+
+  async createVestingSchedule(params: CreateVestingScheduleParams): Promise<string> {
+    const contractId = this.getVestingScheduleId()
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for vesting schedule creation')
+    }
+
+    const adminAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    // Argument order must match create_vesting_schedule(admin, beneficiary, total_amount,
+    // start_time, end_time, cliff_time, revocable) in contracts/vesting_schedule.
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'create_vesting_schedule',
+      args: [
+        nativeToScVal(new Address(adminAddress)),
+        nativeToScVal(new Address(params.beneficiary)),
+        nativeToScVal(params.totalAmount, { type: 'i128' }),
+        nativeToScVal(BigInt(params.startTime), { type: 'u64' }),
+        nativeToScVal(BigInt(params.endTime), { type: 'u64' }),
+        nativeToScVal(BigInt(params.cliffTime), { type: 'u64' }),
+        nativeToScVal(params.revocable),
+      ],
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Vesting schedule created', { beneficiary: params.beneficiary, txHash })
+    return txHash
+  }
+
+  async revokeVesting(beneficiary: string): Promise<string> {
+    const contractId = this.getVestingScheduleId()
+    if (!this.config.adminSecret) {
+      throw new ConfigurationError('SOROBAN_ADMIN_SECRET not configured for vesting revocation')
+    }
+
+    const adminAddress = Keypair.fromSecret(this.config.adminSecret).publicKey()
+    const txHash = await this.adminSigningService.executeAdminOperation({
+      contractId,
+      operation: 'revoke',
+      args: [
+        nativeToScVal(new Address(adminAddress)),
+        nativeToScVal(new Address(beneficiary)),
+      ],
+      networkPassphrase: this.config.networkPassphrase,
+      adminSecret: this.config.adminSecret,
+      server: this.server,
+    })
+
+    logger.info('Vesting schedule revoked', { beneficiary, txHash })
+    return txHash
+  }
+
+  async getVestingSchedule(beneficiary: string): Promise<VestingScheduleRecord | null> {
+    const contractId = this.getVestingScheduleId()
+    try {
+      const result = await this.invokeReadOnly(contractId, 'get_vesting_schedule', [
+        nativeToScVal(new Address(beneficiary)),
+      ])
+      const native = scValToNative(result) as Record<string, unknown> | null | undefined
+      if (!native) return null
+
+      return {
+        beneficiary,
+        totalAmount: BigInt(native.total_amount as bigint),
+        claimedAmount: BigInt(native.claimed_amount as bigint),
+        startTime: Number(native.start_time),
+        cliffTime: Number(native.cliff_time),
+        endTime: Number(native.end_time),
+        revocable: Boolean(native.revocable),
+        revoked: Boolean(native.revoked),
+      }
+    } catch (err) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        `Failed to get vesting schedule for ${beneficiary}`,
+        contractId,
+        'get_vesting_schedule',
+        err,
+      )
+    }
+  }
+
+  async getClaimableVested(beneficiary: string): Promise<bigint> {
+    const contractId = this.getVestingScheduleId()
+    try {
+      const result = await this.invokeReadOnly(contractId, 'get_claimable_amount', [
+        nativeToScVal(new Address(beneficiary)),
+      ])
+      return BigInt(scValToNative(result) as bigint)
+    } catch (err) {
+      if (err instanceof SorobanError) throw err
+      throw new ContractError(
+        `Failed to get claimable vested amount for ${beneficiary}`,
+        contractId,
+        'get_claimable_amount',
+        err,
+      )
+    }
+  }
+
+  /**
+   * Build the beneficiary's unsigned `claim` transaction, simulated so that the
+   * fees and footprint are set. The wallet signs the returned XDR.
+   */
+  async prepareVestingClaim(beneficiary: string): Promise<string> {
+    const contractId = this.getVestingScheduleId()
+
+    let account: Account
+    try {
+      account = await this.server.getAccount(beneficiary)
+    } catch (err) {
+      throw new ContractError(`Could not load account ${beneficiary}`, contractId, 'claim', err)
+    }
+
+    const tx = new TransactionBuilder(account, {
+      fee: BASE_FEE,
+      networkPassphrase: this.config.networkPassphrase,
+    })
+      .addOperation(buildVestingClaimOperation(contractId, beneficiary))
+      .setTimeout(300)
+      .build()
+
+    try {
+      const prepared = await this.server.prepareTransaction(tx)
+      return prepared.toXDR()
+    } catch (err) {
+      throw new ContractError(`Failed to prepare vesting claim for ${beneficiary}`, contractId, 'claim', err)
+    }
+  }
+
+  /** Check a beneficiary-signed claim and broadcast it. Returns the tx hash. */
+  async submitVestingClaim(signedXdr: string, beneficiary: string): Promise<string> {
+    const contractId = this.getVestingScheduleId()
+    const tx = assertVestingClaimXdr(signedXdr, contractId, this.config.networkPassphrase, beneficiary)
+
+    const response = await this.withBackoff(() => this.server.sendTransaction(tx), {
+      op: 'sendTransaction',
+    })
+    if (response.status !== 'PENDING') {
+      throw new TransactionError(
+        `Vesting claim rejected with status ${response.status}`,
+        response.hash,
+        'claim',
+      )
+    }
+
+    logger.info('Vesting claim submitted', { beneficiary, txHash: response.hash })
+    return response.hash
   }
 
   // ── rent_payments contract ──────────────────────────────────────────────────

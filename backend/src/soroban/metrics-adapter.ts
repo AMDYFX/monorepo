@@ -9,6 +9,8 @@ import {
   RecordReceiptParams,
   TenantReputationRecord,
   OraclePriceReading,
+  CreateVestingScheduleParams,
+  VestingScheduleRecord,
 } from './adapter.js';
 import { SorobanConfig } from './client.js';
 import { RawReceiptEvent } from '../indexer/event-parser.js';
@@ -171,6 +173,49 @@ export class MetricsSorobanAdapter implements SorobanAdapter {
     return this.trackCall('createRentPaymentReceipt', () =>
       this.wrapped.createRentPaymentReceipt!(dealId, amount, payer, recipient, timestamp),
     );
+  }
+
+  // vesting_schedule (#1911)
+  async createVestingSchedule?(params: CreateVestingScheduleParams): Promise<string> {
+    if (!this.wrapped.createVestingSchedule) {
+      throw new Error('createVestingSchedule not implemented');
+    }
+    return this.trackCall('createVestingSchedule', () => this.wrapped.createVestingSchedule!(params));
+  }
+
+  async revokeVesting?(beneficiary: string): Promise<string> {
+    if (!this.wrapped.revokeVesting) {
+      throw new Error('revokeVesting not implemented');
+    }
+    return this.trackCall('revokeVesting', () => this.wrapped.revokeVesting!(beneficiary));
+  }
+
+  async getVestingSchedule?(beneficiary: string): Promise<VestingScheduleRecord | null> {
+    if (!this.wrapped.getVestingSchedule) {
+      throw new Error('getVestingSchedule not implemented');
+    }
+    return this.trackCall('getVestingSchedule', () => this.wrapped.getVestingSchedule!(beneficiary));
+  }
+
+  async getClaimableVested?(beneficiary: string): Promise<bigint> {
+    if (!this.wrapped.getClaimableVested) {
+      throw new Error('getClaimableVested not implemented');
+    }
+    return this.trackCall('getClaimableVested', () => this.wrapped.getClaimableVested!(beneficiary));
+  }
+
+  async prepareVestingClaim?(beneficiary: string): Promise<string> {
+    if (!this.wrapped.prepareVestingClaim) {
+      throw new Error('prepareVestingClaim not implemented');
+    }
+    return this.trackCall('prepareVestingClaim', () => this.wrapped.prepareVestingClaim!(beneficiary));
+  }
+
+  async submitVestingClaim?(signedXdr: string, beneficiary: string): Promise<string> {
+    if (!this.wrapped.submitVestingClaim) {
+      throw new Error('submitVestingClaim not implemented');
+    }
+    return this.trackCall('submitVestingClaim', () => this.wrapped.submitVestingClaim!(signedXdr, beneficiary));
   }
 
   /**
