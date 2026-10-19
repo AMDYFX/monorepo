@@ -164,6 +164,10 @@ import { authenticateToken } from "./middleware/auth.js";
 import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
+import {
+  createTenantCreditScoreRouter,
+  createAdminCreditScoreRouter,
+} from "./routes/tenantCreditScore.js";
 import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
 import { createMessagingRouter } from "./routes/messaging.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
@@ -961,6 +965,8 @@ export function createApp() {
     );
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
+    app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
+    app.use("/api/admin/credit-score", createAdminCreditScoreRouter());
     app.use("/api/tenant/documents", createTenantDocumentsRouter());
     app.use("/api/messaging", createMessagingRouter());
     app.use(
@@ -1077,6 +1083,8 @@ export function createApp() {
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
+  app.use("/api/v1/tenant/credit-score", createTenantCreditScoreRouter());
+  app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());
   app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
   app.use("/api/v1/messaging", createMessagingRouter());
   app.use(

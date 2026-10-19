@@ -5773,6 +5773,182 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/tenant/credit-score:
+    get:
+      summary: Get the caller's latest credit score
+      description: |
+        Returns the most recent underwriting credit score snapshot for the
+        authenticated tenant, together with improvement tips derived from the
+        failing and warning factors. Tenants can only ever read their own score.
+        Returns 404 `NO_SCORE_YET` until the first snapshot has been recorded.
+        (#1901)
+      operationId: getTenantCreditScore
+      tags:
+        - Tenant
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Latest credit score
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      score:
+                        type: integer
+                        minimum: 0
+                        maximum: 100
+                      band:
+                        type: string
+                        enum: [poor, fair, good, excellent]
+                      factors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name:
+                              type: string
+                            status:
+                              type: string
+                              enum: [pass, fail, warn]
+                            weight:
+                              type: number
+                            detail:
+                              type: string
+                      computedAt:
+                        type: string
+                        format: date-time
+                      tips:
+                        type: array
+                        items:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: The tenant has not been scored yet (code `NO_SCORE_YET`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/tenant/credit-score/history:
+    get:
+      summary: List the caller's credit score history
+      description: |
+        Returns the tenant's credit score snapshots, newest first. (#1901)
+      operationId: getTenantCreditScoreHistory
+      tags:
+        - Tenant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 12
+      responses:
+        '200':
+          description: Snapshots, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        score:
+                          type: integer
+                        band:
+                          type: string
+                          enum: [poor, fair, good, excellent]
+                        computedAt:
+                          type: string
+                          format: date-time
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/admin/credit-score/{userId}:
+    get:
+      summary: Get a user's latest credit score (admin)
+      description: |
+        Requires the `underwriting:view` permission. Returns the latest
+        credit score snapshot for the given user. (#1901)
+      operationId: getAdminCreditScore
+      tags:
+        - Admin
+      security:
+        - bearerAdminAuth: []
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Latest credit score for the user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    type: object
+                    properties:
+                      userId:
+                        type: string
+                      score:
+                        type: integer
+                      band:
+                        type: string
+                        enum: [poor, fair, good, excellent]
+                      factors:
+                        type: array
+                        items:
+                          type: object
+                      computedAt:
+                        type: string
+                        format: date-time
+                      tips:
+                        type: array
+                        items:
+                          type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: The user has not been scored yet (code `NO_SCORE_YET`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
     UserId:
