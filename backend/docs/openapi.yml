@@ -1247,7 +1247,7 @@ paths:
   /api/admin/withdrawals/{id}/approve:
     post:
       summary: Approve NGN withdrawal
-      description: Approves a pending withdrawal and executes provider payout. Idempotent if already approved/confirmed.
+      description: Approves a pending withdrawal and queues it for provider payout. The payout worker sends the transfer and settles the withdrawal to confirmed or failed. Approval does not move money. Idempotent if already approved or settled.
       operationId: approveNgnWithdrawal
       tags:
         - Admin
@@ -3623,6 +3623,71 @@ paths:
         '404':
           $ref: '#/components/responses/Error'
         '400':
+          $ref: '#/components/responses/Error'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/webhooks/payouts/{rail}:
+    post:
+      summary: Withdrawal payout result webhook
+      description: >-
+        PSP result for a withdrawal payout sent by the payout worker. Settles a processing
+        withdrawal to confirmed or failed (failed releases the held balance). Idempotent by
+        provider event id, and a replay after settlement changes nothing. externalRef must be
+        the payout reference we sent, payout-<withdrawalId>.
+      operationId: payoutsWebhook
+      tags:
+        - Webhooks
+      security:
+        - webhookSignature: []
+      parameters:
+        - name: rail
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [psp, paystack, flutterwave]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - externalRefSource
+                - externalRef
+                - status
+              properties:
+                externalRefSource:
+                  type: string
+                externalRef:
+                  type: string
+                  description: Payout reference we submitted (payout-<withdrawalId>)
+                status:
+                  type: string
+                providerStatus:
+                  type: string
+                providerEventId:
+                  type: string
+      responses:
+        '200':
+          description: Webhook processed (or deduplicated)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  deduped:
+                    type: boolean
+                    example: false
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '404':
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'
@@ -7400,7 +7465,7 @@ components:
           type: number
         status:
           type: string
-          enum: [pending, approved, rejected, confirmed, failed, reversed]
+          enum: [pending, approved, processing, rejected, confirmed, failed, reversed]
         bankAccount:
           $ref: '#/components/schemas/BankAccountDetails'
         reference:

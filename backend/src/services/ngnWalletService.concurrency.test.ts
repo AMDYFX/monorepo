@@ -5,6 +5,7 @@ import { depositStore } from '../models/depositStore.js'
 import { userRiskStateStore } from '../models/userRiskStateStore.js'
 import { AppError } from '../errors/AppError.js'
 import { ErrorCode } from '../errors/errorCodes.js'
+import { seedNgnWalletFixture } from '../test-fixtures/ngnWalletFixtures.js'
 
 describe('NgnWalletService - concurrency & balance invariants', () => {
   let service: NgnWalletService
@@ -15,6 +16,7 @@ describe('NgnWalletService - concurrency & balance invariants', () => {
     await ngnWalletStore.clear()
     userRiskStateStore.clear()
     await depositStore.clear()
+    await seedNgnWalletFixture(userId)
   })
 
   it('allows only one concurrent stake reserve when combined amount exceeds available balance', async () => {

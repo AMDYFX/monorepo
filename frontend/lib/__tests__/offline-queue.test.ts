@@ -83,6 +83,41 @@ describe('offline queue', () => {
     clearOfflineQueue()
   })
 
+  it('stores exactly one Idempotency-Key when apiFetch passes a lowercase header', () => {
+    enqueueOfflineRequest({
+      path: '/api/items',
+      method: 'POST',
+      body: '{"value":1}',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': 'lowercase-key-1',
+      },
+    })
+
+    const [stored] = JSON.parse(localStorage.getItem('shelterflex-offline-queue') ?? '[]')
+    const keyNames = Object.keys(stored.headers).filter(
+      (name) => name.toLowerCase() === 'idempotency-key',
+    )
+    expect(keyNames).toEqual(['Idempotency-Key'])
+    expect(stored.headers['Idempotency-Key']).toBe('lowercase-key-1')
+    clearOfflineQueue()
+  })
+
+  it('generates a UUID key for queued requests that have none', () => {
+    enqueueOfflineRequest({
+      path: '/api/items',
+      method: 'POST',
+      body: '{"value":1}',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    const [stored] = JSON.parse(localStorage.getItem('shelterflex-offline-queue') ?? '[]')
+    expect(stored.headers['Idempotency-Key']).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    )
+    clearOfflineQueue()
+  })
+
   it('moves invalidated actions into the surfaced failure list', async () => {
     enqueueOfflineRequest({
       path: '/api/items',

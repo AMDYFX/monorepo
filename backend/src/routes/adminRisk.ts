@@ -155,6 +155,7 @@ export function createAdminRiskRouter(
           userId,
           reason,
           notes,
+          req.user!.id,
         );
 
         const response = {
@@ -208,7 +209,7 @@ export function createAdminRiskRouter(
           requestId: req.requestId,
         });
 
-        const riskState = await userRiskStateStore.unfreeze(userId, notes);
+        const riskState = await userRiskStateStore.unfreeze(userId, notes, req.user!.id);
 
         const response = {
           success: true,
