@@ -227,6 +227,11 @@ import {
   createInspectorOnboardingRouter,
   createAdminInspectorManagementRouter,
 } from "./routes/inspectorOnboarding.js";
+import {
+  PostgresLandlordPayoutScheduleStore,
+  initLandlordPayoutScheduleStore,
+} from "./models/landlordPayoutScheduleStore.js";
+import { createLandlordPayoutScheduleRouter } from "./routes/landlordPayoutSchedule.js";
 import { createWhistleblowerReportsRouter } from "./routes/whistleblowerReports.js";
 import { createTenantOnboardingRouter } from "./routes/tenantOnboarding.js";
 import { createDocsRouter } from "./routes/docs.js";
@@ -582,6 +587,7 @@ export function createApp() {
   // Tenant Application Store — swap to Postgres when DATABASE_URL is set
   if (process.env.DATABASE_URL) {
     initTenantApplicationStore(new PostgresTenantApplicationStore());
+    initLandlordPayoutScheduleStore(new PostgresLandlordPayoutScheduleStore());
     initTenantDocumentVaultStore(new PostgresTenantDocumentVaultStore());
     // ErasureService is the Postgres erasure request store (also used by the
     // data-retention job for expiry).
@@ -967,6 +973,7 @@ export function createApp() {
       "/api/admin/partner-applications",
       createAdminPartnerApplicationsRouter(),
     );
+    app.use("/api/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
     app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
@@ -1088,6 +1095,7 @@ export function createApp() {
     "/api/v1/admin/partner-applications",
     createAdminPartnerApplicationsRouter(),
   );
+  app.use("/api/v1/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());

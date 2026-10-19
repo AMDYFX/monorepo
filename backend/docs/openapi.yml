@@ -6106,6 +6106,163 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/landlord/payout-schedule:
+    get:
+      summary: Landlord payout schedule grouped into periods
+      description: |
+        Returns the caller's landlord payouts grouped into weekly (ISO week,
+        `YYYY-Www`) or monthly (`YYYY-MM`) periods, plus a summary over the
+        filtered set. Landlord-only; every payout is scoped to the caller. (#1892)
+      operationId: getLandlordPayoutSchedule
+      tags:
+        - Landlord
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: propertyId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [scheduled, processing, completed, delayed, failed, on_hold] } }
+        - { name: channel, in: query, schema: { type: string, enum: [bank_transfer, mobile_money, crypto_wallet, check] } }
+        - { name: grouping, in: query, schema: { type: string, enum: [weekly, monthly], default: monthly } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+      responses:
+        '200':
+          description: Periods and summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      periods: { type: array, items: { type: object } }
+                      summary: { type: object }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/landlord/payout-schedule/payouts:
+    get:
+      summary: Paginated landlord payouts
+      description: Same filters as the schedule endpoint, plus `page` and `pageSize` (max 100). (#1892)
+      operationId: listLandlordPayouts
+      tags:
+        - Landlord
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: propertyId, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string } }
+        - { name: channel, in: query, schema: { type: string } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: One page of payouts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { type: array, items: { type: object } }
+                  pagination:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      page: { type: integer }
+                      pageSize: { type: integer }
+                      totalPages: { type: integer }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/landlord/payout-schedule/preference:
+    get:
+      summary: Get the landlord's payout schedule preference
+      description: Defaults to `monthly`. (#1892)
+      operationId: getLandlordPayoutPreference
+      tags:
+        - Landlord
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current preference
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Update the landlord's payout schedule preference
+      description: Stored in `landlord_payout_preferences`. (#1892)
+      operationId: updateLandlordPayoutPreference
+      tags:
+        - Landlord
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schedulePreference]
+              properties:
+                schedulePreference:
+                  type: string
+                  enum: [activation, weekly, monthly]
+      responses:
+        '200':
+          description: Updated preference
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
+
+  /api/v1/landlord/payout-schedule/{payoutId}:
+    get:
+      summary: Get one landlord payout
+      description: Returns 404 for a payout that belongs to another landlord. (#1892)
+      operationId: getLandlordPayoutDetail
+      tags:
+        - Landlord
+      security:
+        - bearerAuth: []
+      parameters:
+        - { name: payoutId, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The payout
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+
 components:
   parameters:
     UserId:
