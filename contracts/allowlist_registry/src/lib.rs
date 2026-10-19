@@ -1,7 +1,9 @@
 #![no_std]
 
-use soroban_sdk::{contract, contracterror, contractimpl, contracttype, vec, Address, Env, String, Vec, Symbol};
 use soroban_access_control::{extend_storage_ttl, require_admin_permission};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, vec, Address, Env, String, Symbol, Vec,
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -52,14 +54,22 @@ impl AllowlistRegistry {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::MemberCount, &0u32);
         env.events().publish(
-            (Symbol::new(&env, "allowlist"), Symbol::new(&env, "initialized")),
+            (
+                Symbol::new(&env, "allowlist"),
+                Symbol::new(&env, "initialized"),
+            ),
             admin,
         );
         Ok(())
     }
 
     /// Add an address to the allowlist with a label and optional expiry.
-    pub fn add(env: Env, address: Address, label: String, expires_at: u64) -> Result<(), ContractError> {
+    pub fn add(
+        env: Env,
+        address: Address,
+        label: String,
+        expires_at: u64,
+    ) -> Result<(), ContractError> {
         let admin = Self::get_admin(&env)?;
         admin.require_auth();
 
@@ -79,7 +89,9 @@ impl AllowlistRegistry {
         if is_new {
             let count_key = DataKey::MemberCount;
             let current_count = Self::get_member_count(&env);
-            env.storage().instance().set(&count_key, &(current_count + 1));
+            env.storage()
+                .instance()
+                .set(&count_key, &(current_count + 1));
         }
 
         env.events().publish(
@@ -104,7 +116,9 @@ impl AllowlistRegistry {
         let count_key = DataKey::MemberCount;
         let current_count = Self::get_member_count(&env);
         if current_count > 0 {
-            env.storage().instance().set(&count_key, &(current_count - 1));
+            env.storage()
+                .instance()
+                .set(&count_key, &(current_count - 1));
         }
 
         env.events().publish(
@@ -129,8 +143,7 @@ impl AllowlistRegistry {
 
     /// Get the allowlist entry for an address.
     pub fn get_entry(env: Env, address: Address) -> Result<AllowlistEntry, ContractError> {
-        Self::get_entry_internal(&env, &address)
-            .ok_or(ContractError::NotFound)
+        Self::get_entry_internal(&env, &address).ok_or(ContractError::NotFound)
     }
 
     /// Add multiple entries in bulk.
@@ -169,7 +182,9 @@ impl AllowlistRegistry {
         if new_count > 0 {
             let count_key = DataKey::MemberCount;
             let current_count = Self::get_member_count(&env);
-            env.storage().instance().set(&count_key, &(current_count + new_count));
+            env.storage()
+                .instance()
+                .set(&count_key, &(current_count + new_count));
         }
 
         Ok(())

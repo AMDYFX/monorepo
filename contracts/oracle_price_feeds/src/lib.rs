@@ -1,10 +1,10 @@
 #![no_std]
 
+use soroban_access_control::{extend_storage_ttl, require_admin_permission};
+use soroban_pausable::{Pausable, PausableError};
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, vec, Address, Env, Symbol, Vec,
 };
-use soroban_pausable::{Pausable, PausableError};
-use soroban_access_control::{extend_storage_ttl, require_admin_permission};
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types
@@ -71,10 +71,17 @@ impl OraclePriceFeeds {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Paused, &false);
-        env.storage().instance().set(&DataKey::StalenessThreshold, &600u64);
-        env.storage().instance().set(&DataKey::MaxDeviationBps, &500u32);
+        env.storage()
+            .instance()
+            .set(&DataKey::StalenessThreshold, &600u64);
+        env.storage()
+            .instance()
+            .set(&DataKey::MaxDeviationBps, &500u32);
         env.events().publish(
-            (Symbol::new(&env, "oracle"), Symbol::new(&env, "initialized")),
+            (
+                Symbol::new(&env, "oracle"),
+                Symbol::new(&env, "initialized"),
+            ),
             admin,
         );
         Ok(())
@@ -105,7 +112,10 @@ impl OraclePriceFeeds {
         }
 
         env.events().publish(
-            (Symbol::new(&env, "oracle"), Symbol::new(&env, "source_added")),
+            (
+                Symbol::new(&env, "oracle"),
+                Symbol::new(&env, "source_added"),
+            ),
             (pair, source),
         );
         Ok(())
@@ -134,7 +144,10 @@ impl OraclePriceFeeds {
         extend_storage_ttl(&env, &key);
 
         env.events().publish(
-            (Symbol::new(&env, "oracle"), Symbol::new(&env, "source_removed")),
+            (
+                Symbol::new(&env, "oracle"),
+                Symbol::new(&env, "source_removed"),
+            ),
             (pair, source),
         );
         Ok(())
@@ -150,7 +163,12 @@ impl OraclePriceFeeds {
     }
 
     /// Set the quorum required for a pair.
-    pub fn set_quorum(env: Env, admin: Address, pair: Symbol, quorum: u32) -> Result<(), ContractError> {
+    pub fn set_quorum(
+        env: Env,
+        admin: Address,
+        pair: Symbol,
+        quorum: u32,
+    ) -> Result<(), ContractError> {
         let stored_admin = Self::get_admin(&env)?;
         require_admin_permission(
             &env,
@@ -226,7 +244,10 @@ impl OraclePriceFeeds {
         extend_storage_ttl(&env, &price_key);
 
         env.events().publish(
-            (Symbol::new(&env, "oracle"), Symbol::new(&env, "price_updated")),
+            (
+                Symbol::new(&env, "oracle"),
+                Symbol::new(&env, "price_updated"),
+            ),
             (pair, price),
         );
         Ok(())
@@ -235,8 +256,7 @@ impl OraclePriceFeeds {
     /// Get the current price feed for a pair.
     /// Fails if price is stale or doesn't exist.
     pub fn get_price(env: Env, pair: Symbol) -> Result<PriceFeed, ContractError> {
-        let feed = Self::get_price_internal(&env, &pair)
-            .ok_or(ContractError::UnknownPair)?;
+        let feed = Self::get_price_internal(&env, &pair).ok_or(ContractError::UnknownPair)?;
 
         let staleness_threshold = Self::get_staleness_threshold(&env);
         let now = env.ledger().timestamp();
@@ -249,8 +269,7 @@ impl OraclePriceFeeds {
 
     /// Check if a price is stale.
     pub fn is_stale(env: Env, pair: Symbol) -> Result<bool, ContractError> {
-        let feed = Self::get_price_internal(&env, &pair)
-            .ok_or(ContractError::UnknownPair)?;
+        let feed = Self::get_price_internal(&env, &pair).ok_or(ContractError::UnknownPair)?;
 
         let staleness_threshold = Self::get_staleness_threshold(&env);
         let now = env.ledger().timestamp();
@@ -276,18 +295,17 @@ impl OraclePriceFeeds {
         env.storage().instance().set(&key, &threshold);
 
         env.events().publish(
-            (Symbol::new(&env, "oracle"), Symbol::new(&env, "staleness_threshold_set")),
+            (
+                Symbol::new(&env, "oracle"),
+                Symbol::new(&env, "staleness_threshold_set"),
+            ),
             threshold,
         );
         Ok(())
     }
 
     /// Set the maximum deviation in basis points.
-    pub fn set_max_deviation_bps(
-        env: Env,
-        admin: Address,
-        bps: u32,
-    ) -> Result<(), ContractError> {
+    pub fn set_max_deviation_bps(env: Env, admin: Address, bps: u32) -> Result<(), ContractError> {
         let stored_admin = Self::get_admin(&env)?;
         require_admin_permission(
             &env,
@@ -301,7 +319,10 @@ impl OraclePriceFeeds {
         env.storage().instance().set(&key, &bps);
 
         env.events().publish(
-            (Symbol::new(&env, "oracle"), Symbol::new(&env, "max_deviation_bps_set")),
+            (
+                Symbol::new(&env, "oracle"),
+                Symbol::new(&env, "max_deviation_bps_set"),
+            ),
             bps,
         );
         Ok(())
@@ -602,12 +623,7 @@ mod tests {
             invoke: &MockAuthInvoke {
                 contract: &client.address,
                 fn_name: "update_price",
-                args: (
-                    unauthorized_source.clone(),
-                    pair.clone(),
-                    1000000i128,
-                )
-                    .into_val(&env),
+                args: (unauthorized_source.clone(), pair.clone(), 1000000i128).into_val(&env),
                 sub_invokes: &[],
             },
         }]);
@@ -707,7 +723,10 @@ mod tests {
         }]);
 
         let result = client.try_update_price(&source, &pair, 1600000);
-        assert_eq!(result.unwrap_err().unwrap(), ContractError::InvalidDeviation);
+        assert_eq!(
+            result.unwrap_err().unwrap(),
+            ContractError::InvalidDeviation
+        );
     }
 
     #[test]
