@@ -8,7 +8,9 @@ import { getUsdcTokenAddress } from "./utils/token.js"
 import { runMigrationsIfNeeded } from "./migrations/runMigrations.js"
 import { validateCreditScoringConfig } from "./config/creditScoring.js"
 import { validatePiiEncryptionKey } from "./utils/piiEncryption.js"
+import { assertProductionIntegrations } from "./config/productionIntegrations.js"
 import { startBackupJob } from "./jobs/backupJob.js"
+import { startInspectionClaimExpiryJob } from "./jobs/inspectionClaimExpiryJob.js"
 import { ReconciliationWorker } from "./reconciliation/index.js"
 import { notificationWSS } from "./services/websocket/NotificationWebSocketServer.js"
 import { loadContractAddresses } from "./config/contractAddresses.js"
@@ -41,10 +43,13 @@ async function main() {
   try {
     loadContractAddresses(process.env)
     validatePiiEncryptionKey(env.ENCRYPTION_KEY, env.NODE_ENV)
+    // Fails fast in production when an integration would silently run on a stub (#1942).
+    assertProductionIntegrations(process.env)
     const { validateLatePaymentConfig } = await import('./config/latePayment.js')
     validateLatePaymentConfig()
     await runMigrationsIfNeeded()
     const backupInterval = startBackupJob()
+    const inspectionClaimExpiryInterval = startInspectionClaimExpiryJob()
     const app = createApp()
     const outboxWorker = maybeStartOutboxWorker()
     const reconciliationWorker = new ReconciliationWorker()
@@ -75,6 +80,7 @@ async function main() {
 
       try {
         if (backupInterval) clearInterval(backupInterval)
+        clearInterval(inspectionClaimExpiryInterval)
         await reconciliationWorker.stop()
         await rentWalletWorker.stop()
         if (outboxWorker) await outboxWorker.stop()

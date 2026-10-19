@@ -168,6 +168,23 @@ import { authenticateToken } from "./middleware/auth.js";
 import { requireFlag } from "./middleware/requireFlag.js";
 import { createFeatureFlagsRouter } from "./routes/featureFlags.js";
 import { createTenantApplicationsRouter } from "./routes/tenantApplications.js";
+import {
+  createLandlordTenantRatingRouter,
+  createTenantRatingCardRouter,
+  createPublicRatingCardRouter,
+} from "./routes/tenantRatingCard.js";
+import {
+  PostgresTenantRatingStore,
+  initTenantRatingStore,
+} from "./models/tenantRatingStore.js";
+import {
+  createInspectorJobsRouter,
+  createAdminInspectionJobsRouter,
+} from "./routes/inspectionJobs.js";
+import {
+  PostgresInspectionJobStore,
+  initInspectionJobStore,
+} from "./models/inspectionJobStore.js";
 import { createSupportMessagesRouter } from "./routes/supportMessages.js";
 import { createApartmentReviewsRouter } from "./routes/apartmentReviews.js";
 import {
@@ -654,6 +671,8 @@ export function createApp() {
     initRentGuaranteeStore(new PostgresRentGuaranteeStore());
     initPropertyInspectionStore(new PostgresPropertyInspectionStore());
     initInspectorProfileStore(new PostgresInspectorProfileStore());
+    initTenantRatingStore(new PostgresTenantRatingStore());
+    initInspectionJobStore(new PostgresInspectionJobStore());
   }
 
   // Indexer
@@ -1048,6 +1067,11 @@ export function createApp() {
     app.use("/api/admin/inspectors", createAdminInspectorsRouter());
     app.use("/api/admin/inspectors", createAdminInspectorManagementRouter());
     app.use("/api/inspector", createInspectorOnboardingRouter());
+    app.use("/api/inspector/jobs", createInspectorJobsRouter());
+    app.use("/api/admin/inspector/jobs", createAdminInspectionJobsRouter());
+    app.use("/api/deals", createLandlordTenantRatingRouter());
+    app.use("/api/tenant/rating-card", createTenantRatingCardRouter());
+    app.use("/api/public/rating-card", createPublicRatingCardRouter());
   }
 
   app.use("/api/v1/wallet", createWalletRouter(walletService));
@@ -1091,6 +1115,7 @@ export function createApp() {
   app.use("/api/v1/admin/users", createAdminUserSessionsRouter());
   app.use("/api/v1", createRentGuaranteeRouter());
   app.use("/api/v1/deals", createDealsRouter());
+  app.use("/api/v1/deals", createLandlordTenantRatingRouter());
   app.use("/api/v1", createLeaseAgreementsRouter());
   app.use("/api/v1/whistleblower", createWhistleblowerRouter(earningsService));
   app.use(
@@ -1119,6 +1144,8 @@ export function createApp() {
   app.use("/api/v1/admin/inspectors", createAdminInspectorsRouter());
   app.use("/api/v1/admin/inspectors", createAdminInspectorManagementRouter());
   app.use("/api/v1/inspector", createInspectorOnboardingRouter());
+  app.use("/api/v1/inspector/jobs", createInspectorJobsRouter());
+  app.use("/api/v1/admin/inspector/jobs", createAdminInspectionJobsRouter());
   app.use("/api/v1/config/feature-flags", createFeatureFlagsRouter());
 
   app.use(
@@ -1163,6 +1190,8 @@ export function createApp() {
   app.use("/api/v1/tenant/data-export", createTenantDataExportRouter());
   app.use("/api/v1/admin/credit-score", createAdminCreditScoreRouter());
   app.use("/api/v1/tenant/documents", createTenantDocumentsRouter());
+  app.use("/api/v1/tenant/rating-card", createTenantRatingCardRouter());
+  app.use("/api/v1/public/rating-card", createPublicRatingCardRouter());
   app.use("/api/v1/messaging", createMessagingRouter());
   app.use(
     "/api/v1/whistleblower/applications",

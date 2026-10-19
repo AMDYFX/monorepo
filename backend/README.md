@@ -341,6 +341,39 @@ INDEXER_START_LEDGER=
 > **Security**: `SOROBAN_ADMIN_SECRET` confers full control over the contracts. It should ONLY be used in restricted admin contexts and NEVER committed to version control. General request handlers do not have access to this secret.
 
 
+## Production integration guard (#1942)
+
+Several integrations default to a stub or mock when their env var is unset. In
+production the server refuses to start while any integration resolves to a stub,
+so a missing variable cannot produce fake balances, KYC approvals or payment
+confirmations.
+
+Set these in production so every integration uses its real provider:
+
+| Integration | Env var | Stub / mock value |
+|---|---|---|
+| `soroban` | `SOROBAN_ADAPTER_MODE=real` (or `USE_REAL_SOROBAN=true`) | `stub` |
+| `paymentRail.psp` | `PSP_PROVIDER_PSP` | `stub` |
+| `paymentRail.paystack` | `PSP_PROVIDER_PAYSTACK=paystack` | `stub` |
+| `paymentRail.flutterwave` | `PSP_PROVIDER_FLUTTERWAVE=flutterwave` | `stub` |
+| `conversion` | `CONVERSION_PROVIDER` | `stub` |
+| `kyc` | `KYC_PROVIDER_TYPE` | `stub` |
+| `esign` | `ESIGN_PROVIDER` | `stub` |
+| `creditBureau` | `CREDIT_BUREAU_PROVIDER` | `mock` |
+| `aiScoring` | `AI_SCORING_PROVIDER` | `stub` |
+| `rentGuarantee` | `RENT_GUARANTEE_PROVIDER` | `mock` |
+
+An integration with no real provider yet can be accepted explicitly with
+`ALLOW_STUB_PROVIDERS` (comma-separated names from the table, case-insensitive):
+
+```bash
+ALLOW_STUB_PROVIDERS=rentGuarantee,aiScoring
+```
+
+Opted-out stubs log a `production.stub_integration_allowed` warning at boot.
+`GET /health` lists every integration on a stub in `stubbedIntegrations`, whether
+or not it is opted out. Outside production the guard never blocks startup.
+
 ## Request IDs
 
 Every incoming request is assigned a unique request ID to help track and debug requests across the system.
