@@ -6,12 +6,14 @@
  *
  * Features:
  * - Automatic retry with exponential backoff for transient failures
+ * - Idempotency-Key per logical mutation, reused across retries
  * - User-friendly error messages
  * - Request correlation IDs
  */
 
 import { apiFetch } from "./api";
 import { retryWithBackoff, type RetryOptions } from "./retryLogic";
+import { newIdempotencyKey } from "./idempotencyKey";
 
 export { ApiError, isAccountFrozenError, ACCOUNT_FROZEN_MESSAGE } from "./api";
 
@@ -32,6 +34,23 @@ const DEFAULT_RETRY_OPTIONS: RetryOptions = {
 
 // ── HTTP helpers with retry logic ────────────────────────────────────────────
 
+/**
+ * Builds the init for a state-changing request. The Idempotency-Key is passed
+ * in, not generated here, so the caller can create it once and reuse it for
+ * every retry of the same operation.
+ */
+function mutatingRequest(
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
+  idempotencyKey: string,
+  body?: unknown,
+): RequestInit {
+  return {
+    method,
+    headers: { "Idempotency-Key": idempotencyKey },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  };
+}
+
 export async function apiGet<T>(
   path: string,
   retryOptions?: RetryOptions,
@@ -42,17 +61,18 @@ export async function apiGet<T>(
   });
 }
 
+/**
+ * @param idempotencyKey Optional caller-owned key. Omit it to get a fresh key
+ * for this call. Either way, every retry of this call sends the same key.
+ */
 export async function apiPost<T>(
   path: string,
   body: unknown,
   retryOptions?: RetryOptions,
+  idempotencyKey: string = newIdempotencyKey(),
 ): Promise<T> {
   return retryWithBackoff(
-    () =>
-      apiFetch<T>(path, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+    () => apiFetch<T>(path, mutatingRequest("POST", idempotencyKey, body)),
     { ...DEFAULT_RETRY_OPTIONS, ...retryOptions },
   );
 }
@@ -61,13 +81,10 @@ export async function apiPut<T>(
   path: string,
   body: unknown,
   retryOptions?: RetryOptions,
+  idempotencyKey: string = newIdempotencyKey(),
 ): Promise<T> {
   return retryWithBackoff(
-    () =>
-      apiFetch<T>(path, {
-        method: "PUT",
-        body: JSON.stringify(body),
-      }),
+    () => apiFetch<T>(path, mutatingRequest("PUT", idempotencyKey, body)),
     { ...DEFAULT_RETRY_OPTIONS, ...retryOptions },
   );
 }
@@ -76,13 +93,10 @@ export async function apiPatch<T>(
   path: string,
   body: unknown,
   retryOptions?: RetryOptions,
+  idempotencyKey: string = newIdempotencyKey(),
 ): Promise<T> {
   return retryWithBackoff(
-    () =>
-      apiFetch<T>(path, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      }),
+    () => apiFetch<T>(path, mutatingRequest("PATCH", idempotencyKey, body)),
     { ...DEFAULT_RETRY_OPTIONS, ...retryOptions },
   );
 }
@@ -90,11 +104,12 @@ export async function apiPatch<T>(
 export async function apiDelete<T>(
   path: string,
   retryOptions?: RetryOptions,
+  idempotencyKey: string = newIdempotencyKey(),
 ): Promise<T> {
-  return retryWithBackoff(() => apiFetch<T>(path, { method: "DELETE" }), {
-    ...DEFAULT_RETRY_OPTIONS,
-    ...retryOptions,
-  });
+  return retryWithBackoff(
+    () => apiFetch<T>(path, mutatingRequest("DELETE", idempotencyKey)),
+    { ...DEFAULT_RETRY_OPTIONS, ...retryOptions },
+  );
 }
 
 // ── Query string helper ──────────────────────────────────────────────────────

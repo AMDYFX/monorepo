@@ -65,6 +65,10 @@ export class InMemoryNgnWalletStore implements NgnWalletStore {
         return this.ledger.filter((e) => e.walletId === walletId)
     }
 
+    async listLedgerEntriesByReferenceType(referenceType: string): Promise<LedgerEntry[]> {
+        return this.ledger.filter((e) => e.referenceType === referenceType)
+    }
+
     async listWallets(options?: { limit?: number; cursor?: string }): Promise<{ items: NgnWallet[]; nextCursor: string | null }> {
         const limit = options?.limit ?? 50
         const cursor = options?.cursor
@@ -149,6 +153,16 @@ export class PostgresNgnWalletStore implements NgnWalletStore {
         const pool = await getPool()
         if (!pool) return []
         const { rows } = await pool.query(`SELECT * FROM ngn_ledger_entries WHERE wallet_id=$1 ORDER BY created_at DESC`, [walletId])
+        return rows.map(this.mapLedgerEntry)
+    }
+
+    async listLedgerEntriesByReferenceType(referenceType: string): Promise<LedgerEntry[]> {
+        const pool = await getPool()
+        if (!pool) return []
+        const { rows } = await pool.query(
+            `SELECT * FROM ngn_ledger_entries WHERE reference_type = $1 ORDER BY created_at ASC`,
+            [referenceType]
+        )
         return rows.map(this.mapLedgerEntry)
     }
 

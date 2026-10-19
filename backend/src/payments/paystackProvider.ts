@@ -26,6 +26,7 @@ import type {
   MapStatusInput,
   ParseWebhookResult,
   PaymentProvider,
+  VerifyPayoutResult,
 } from './types.js'
 
 const PAYSTACK_BASE_URL = () =>
@@ -300,6 +301,21 @@ export class PaystackProvider implements PaymentProvider {
       status,
       providerStatus: transfer.status,
     }
+  }
+
+  // ---- Payout status lookup -----------------------------------------------
+
+  async verifyPayout(input: { internalRef: string }): Promise<VerifyPayoutResult> {
+    // Paystack's transfer verify endpoint, keyed by the reference we sent
+    const transfer = await paystackGet<{ status: string }>(
+      `/transfer/verify/${encodeURIComponent(input.internalRef)}`,
+    )
+    const providerStatus = transfer.status
+    if (providerStatus === 'success') return { status: 'confirmed', providerStatus }
+    if (providerStatus === 'failed' || providerStatus === 'reversed') {
+      return { status: 'failed', providerStatus }
+    }
+    return { status: 'pending', providerStatus }
   }
 
   // ---- Bank account resolution --------------------------------------------

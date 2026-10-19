@@ -43,6 +43,20 @@ describe('apiFetch Idempotency-Key handling', () => {
     expect(headers.get('Idempotency-Key')).toBe(customKey);
   });
 
+  it('keeps the Idempotency-Key when the caller also passes other headers', async () => {
+    await apiFetch('/test-endpoint', {
+      method: 'POST',
+      headers: { 'X-Request-Source': 'test' },
+      body: JSON.stringify({ foo: 'bar' }),
+    });
+
+    const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
+    const [, options] = fetchMock.mock.calls[0];
+    const headers = options.headers as Headers;
+    expect(headers.get('X-Request-Source')).toBe('test');
+    expect(headers.get('Idempotency-Key')).toBeTruthy();
+  });
+
   it('does not attach an Idempotency-Key header on GET requests', async () => {
     await apiFetch('/test-endpoint', {
       method: 'GET',

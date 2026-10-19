@@ -6,6 +6,7 @@ import express from 'express'
 import { sessionStore, userStore } from '../models/authStore.js'
 import { ngnDepositStore } from '../models/ngnDepositStore.js'
 import { ngnWalletStore } from '../models/ngnWalletStore.js'
+import { seedNgnWalletFixture } from '../test-fixtures/ngnWalletFixtures.js'
 
 describe('NGN Wallet Routes', () => {
   let ngnWalletService: NgnWalletService
@@ -36,6 +37,7 @@ describe('NGN Wallet Routes', () => {
     app.use('/api/wallet/ngn', createNgnWalletRouter(ngnWalletService))
 
     await ngnWalletStore.clear()
+    await seedNgnWalletFixture(userId)
     return ngnDepositStore.clear()
   })
 

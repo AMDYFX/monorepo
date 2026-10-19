@@ -86,8 +86,7 @@ describe('Risk Routes', () => {
       const userId = (await userStore.getByEmail(email))!.id
 
       // Seed the ledger directly to produce a negative balance.
-      // getOrCreateWallet creates the wallet with an initial TOPUP of 55000.
-      // Writing a reversal of 100000 drives totalNgn to -45000.
+      // New wallets start at zero, so a reversal of 100000 drives totalNgn to -100000.
       const wallet = await ngnWalletStore.getWalletByUserId(userId)
         ?? await ngnWalletStore.createWallet(userId)
       await ngnWalletStore.createLedgerEntry({
