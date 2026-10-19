@@ -7,7 +7,14 @@ import {
 } from './circuit-breaker-errors.js'
 import { CircuitBreaker } from './circuit-breaker.js'
 import { CircuitBreakerConfig } from './circuit-breaker-config.js'
-import { SorobanAdapter, RecordReceiptParams, TenantReputationRecord, OraclePriceReading } from './adapter.js'
+import {
+  SorobanAdapter,
+  RecordReceiptParams,
+  TenantReputationRecord,
+  OraclePriceReading,
+  CreateVestingScheduleParams,
+  VestingScheduleRecord,
+} from './adapter.js'
 import { SorobanConfig } from './client.js'
 import { RawReceiptEvent } from '../indexer/event-parser.js'
 
@@ -313,6 +320,62 @@ export class CircuitBreakerAdapter implements SorobanAdapter {
     }
     return this.executeWithCircuitBreaker('createRentPaymentReceipt', () =>
       this.wrappedAdapter.createRentPaymentReceipt!(dealId, amount, payer, recipient, timestamp),
+    )
+  }
+
+  // ── vesting_schedule (#1911) ───────────────────────────────────────────────
+
+  async createVestingSchedule?(params: CreateVestingScheduleParams): Promise<string> {
+    if (!this.wrappedAdapter.createVestingSchedule) {
+      throw new Error('createVestingSchedule not supported by wrapped adapter')
+    }
+    return this.executeWithCircuitBreaker('createVestingSchedule', () =>
+      this.wrappedAdapter.createVestingSchedule!(params),
+    )
+  }
+
+  async revokeVesting?(beneficiary: string): Promise<string> {
+    if (!this.wrappedAdapter.revokeVesting) {
+      throw new Error('revokeVesting not supported by wrapped adapter')
+    }
+    return this.executeWithCircuitBreaker('revokeVesting', () =>
+      this.wrappedAdapter.revokeVesting!(beneficiary),
+    )
+  }
+
+  async getVestingSchedule?(beneficiary: string): Promise<VestingScheduleRecord | null> {
+    if (!this.wrappedAdapter.getVestingSchedule) {
+      throw new Error('getVestingSchedule not supported by wrapped adapter')
+    }
+    return this.executeWithCircuitBreaker('getVestingSchedule', () =>
+      this.wrappedAdapter.getVestingSchedule!(beneficiary),
+    )
+  }
+
+  async getClaimableVested?(beneficiary: string): Promise<bigint> {
+    if (!this.wrappedAdapter.getClaimableVested) {
+      throw new Error('getClaimableVested not supported by wrapped adapter')
+    }
+    return this.executeWithCircuitBreaker('getClaimableVested', () =>
+      this.wrappedAdapter.getClaimableVested!(beneficiary),
+    )
+  }
+
+  async prepareVestingClaim?(beneficiary: string): Promise<string> {
+    if (!this.wrappedAdapter.prepareVestingClaim) {
+      throw new Error('prepareVestingClaim not supported by wrapped adapter')
+    }
+    return this.executeWithCircuitBreaker('prepareVestingClaim', () =>
+      this.wrappedAdapter.prepareVestingClaim!(beneficiary),
+    )
+  }
+
+  async submitVestingClaim?(signedXdr: string, beneficiary: string): Promise<string> {
+    if (!this.wrappedAdapter.submitVestingClaim) {
+      throw new Error('submitVestingClaim not supported by wrapped adapter')
+    }
+    return this.executeWithCircuitBreaker('submitVestingClaim', () =>
+      this.wrappedAdapter.submitVestingClaim!(signedXdr, beneficiary),
     )
   }
 }
