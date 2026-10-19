@@ -49,6 +49,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
       label: "Rate Whistleblower",
       icon: MessageSquare,
     },
+    { href: "/dashboard/tenant/credit-score", label: "Credit Score", icon: CreditCard },
     { href: "/dashboard/tenant/settings", label: "Settings", icon: Settings },
   ],
   landlord: [
