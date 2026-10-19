@@ -17,6 +17,8 @@ members = [
 
   "bond_collateral",
   "slashing_module",
+  "schema_registry",
+  "multisig_admin",
 ]
 
 [profile.release]
