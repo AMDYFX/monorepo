@@ -7,6 +7,7 @@ import {
   Home,
   Building2,
   Heart,
+  Gift,
   CreditCard,
   MessageSquare,
   Settings,
@@ -52,6 +53,7 @@ const NAV_ITEMS: Record<Role, NavItem[]> = {
       icon: MessageSquare,
     },
     { href: "/dashboard/tenant/credit-score", label: "Credit Score", icon: CreditCard },
+    { href: "/dashboard/tenant/referrals", label: "Refer a friend", icon: Gift },
     { href: "/dashboard/tenant/settings", label: "Settings", icon: Settings },
   ],
   landlord: [
