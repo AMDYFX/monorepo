@@ -66,7 +66,7 @@ describe('Vesting routes (#1911)', () => {
   })
 
   /** Creates a schedule that is half vested at NOW: 1000 tokens over 2000 seconds, cliff already passed. */
-  async function createScheduleFor(beneficiary: string, overrides: Record<string, unknown> = {}) {
+  function createScheduleFor(beneficiary: string, overrides: Record<string, unknown> = {}) {
     return request(app)
       .post('/api/v1/admin/vesting')
       .set(auth(adminToken))

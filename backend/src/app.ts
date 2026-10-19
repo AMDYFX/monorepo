@@ -1179,6 +1179,8 @@ export function createApp() {
   app.use("/api/kyc", createKycRouter());
   app.use("/api/tenant/onboarding", createTenantOnboardingRouter());
   app.use("/api/listings", createListingsRouter());
+  app.use("/api/support/messages", createSupportMessagesRouter());
+  app.use("/api/admin/support/messages", createSupportMessagesRouter());
   app.use("/api", listingApplicationsRouter);
   app.use("/api/webhooks/kyc", createKycWebhookRouter());
   app.use("/api/onboarding", createOnboardingRouter());
