@@ -14,6 +14,12 @@ export interface LeaseAgreement {
   leaseId: string
   dealId: string
   documentKey: string
+  /**
+   * Hash of the document bytes recorded when the lease was generated. The
+   * integrity endpoint re-hashes the stored document and compares it with this
+   * value to prove the document has not changed since it was generated (#1960).
+   */
+  documentHash?: string
   status: LeaseStatus
   tenantSignedAt?: Date
   landlordSignedAt?: Date
@@ -26,4 +32,34 @@ export interface LeaseAgreement {
 export interface CreateLeaseInput {
   dealId: string
   documentKey: string
+  documentHash?: string
+}
+
+/** A recorded signature event for a lease (one per party). */
+export interface LeaseSignature {
+  signatureId: string
+  dealId: string
+  leaseId: string
+  signerId: string
+  signerRole: 'tenant' | 'landlord'
+  signerName: string
+  signedAt: Date
+  /** Client-supplied signature date (yyyy-MM-dd), stored verbatim. */
+  signDate: string
+  /** Document hash at the moment of signing. */
+  documentHash: string
+  ip?: string
+  userAgent?: string
+}
+
+export interface CreateLeaseSignatureInput {
+  dealId: string
+  leaseId: string
+  signerId: string
+  signerRole: 'tenant' | 'landlord'
+  signerName: string
+  signDate: string
+  documentHash: string
+  ip?: string
+  userAgent?: string
 }

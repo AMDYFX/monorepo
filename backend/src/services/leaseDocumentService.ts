@@ -51,6 +51,7 @@ export async function generateLeaseDraft(
   const lease = await leaseAgreementStore.create({
     dealId,
     documentKey,
+    documentHash: computeLeaseDocumentHash(documentKey),
   });
 
   // In production, generate PDF here using pdfkit

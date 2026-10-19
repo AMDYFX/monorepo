@@ -173,6 +173,9 @@ import {
   createAdminCreditScoreRouter,
 } from "./routes/tenantCreditScore.js";
 import { createTenantDocumentsRouter } from "./routes/tenantDocuments.js";
+import { createTenantLeaseRouter } from "./routes/tenantLease.js";
+import { createLandlordAnalyticsRouter } from "./routes/landlordAnalytics.js";
+import { createFullPaymentRouter } from "./routes/fullPayment.js";
 import { createMessagingRouter } from "./routes/messaging.js";
 import { createTenantPaymentsRouter } from "./routes/tenantPayments.js";
 import { createNotificationsRouter } from "./routes/notifications.js";
@@ -1021,6 +1024,9 @@ export function createApp() {
       createAdminPartnerApplicationsRouter(),
     );
     app.use("/api/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
+    app.use("/api", createLandlordAnalyticsRouter());
+    app.use("/api/payments", createFullPaymentRouter());
+    app.use("/api", createTenantLeaseRouter());
     app.use("/api/landlord", authenticateToken, createLandlordRouter());
     app.use("/api/tenant/applications", createTenantApplicationsRouter());
     app.use("/api/tenant/credit-score", createTenantCreditScoreRouter());
@@ -1144,6 +1150,9 @@ export function createApp() {
     createAdminPartnerApplicationsRouter(),
   );
   app.use("/api/v1/landlord/payout-schedule", createLandlordPayoutScheduleRouter());
+  app.use("/api/v1", createLandlordAnalyticsRouter());
+  app.use("/api/v1/payments", createFullPaymentRouter());
+  app.use("/api/v1", createTenantLeaseRouter());
   app.use("/api/v1/landlord", authenticateToken, createLandlordRouter());
   app.use("/api/v1/admin", createAdminLandlordVerificationRouter());
   app.use("/api/v1/tenant/applications", createTenantApplicationsRouter());
