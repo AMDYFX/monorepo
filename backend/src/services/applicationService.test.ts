@@ -140,6 +140,15 @@ describe("ApplicationService", () => {
   describe("reviewApplication", () => {
     const applicationId = "app-1";
     const landlordId = "landlord-1";
+
+    beforeEach(async () => {
+      // A priced listing so that the RTI is computed (issue #1953)
+      const { listingStore } = await import("../models/listingStore.js");
+      vi.mocked(listingStore.getById).mockResolvedValue({
+        annualRentNgn: 2_400_000,
+      } as any);
+    });
+
     const mockApplication: ListingApplication = {
       id: applicationId,
       tenantId: "tenant-1",

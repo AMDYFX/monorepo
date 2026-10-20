@@ -56,7 +56,8 @@ describe('deriveReviewRepayment', () => {
 
       expect(result.available).toBe(true)
       if (result.available) {
-        expect(result.monthlyRepayment * 100).toBe(dealSchedule.schedule[0].totalAmountNgn)
+        // Kobo to NGN is a float division, so compare in whole kobo
+        expect(Math.round(result.monthlyRepayment * 100)).toBe(dealSchedule.schedule[0].totalAmountNgn)
         expect(result.basis.termMonths).toBe(termMonths)
       }
     }
