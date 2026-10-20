@@ -42,6 +42,13 @@ export interface LandlordPayoutScheduleStore {
     landlordId: string,
     preference: PayoutSchedulePreference,
   ): Promise<PayoutSchedulePreference>
+  /**
+   * Insert a payout unless one with the same id already exists. Returns true
+   * when a row was written and false for a replay, so callers can be idempotent.
+   */
+  insertIfAbsent(payout: LandlordPayout): Promise<boolean>
+  /** Sum of gross amounts of the landlord's non-failed payouts created at or after `since`. */
+  sumGrossSince(landlordId: string, since: Date): Promise<number>
 }
 
 export const DEFAULT_PAYOUT_SCHEDULE_PREFERENCE: PayoutSchedulePreference = 'monthly'
@@ -70,6 +77,23 @@ export class InMemoryLandlordPayoutScheduleStore implements LandlordPayoutSchedu
   /** Test helper: seed a payout. */
   add(payout: LandlordPayout): void {
     this.payouts.push({ ...payout, deductions: [...payout.deductions] })
+  }
+
+  async insertIfAbsent(payout: LandlordPayout): Promise<boolean> {
+    if (this.payouts.some((p) => p.id === payout.id)) return false
+    this.payouts.push({ ...payout, deductions: [...payout.deductions] })
+    return true
+  }
+
+  async sumGrossSince(landlordId: string, since: Date): Promise<number> {
+    return this.payouts
+      .filter(
+        (p) =>
+          p.landlordId === landlordId &&
+          p.status !== 'failed' &&
+          Date.parse(p.createdAt) >= since.getTime(),
+      )
+      .reduce((sum, p) => sum + p.grossAmount, 0)
   }
 
   private forLandlord(landlordId: string, filters: LandlordPayoutFilters): LandlordPayout[] {
@@ -242,6 +266,56 @@ export class PostgresLandlordPayoutScheduleStore implements LandlordPayoutSchedu
       [landlordId, preference],
     )
     return result.rows[0].schedule_preference as PayoutSchedulePreference
+  }
+
+  async insertIfAbsent(payout: LandlordPayout): Promise<boolean> {
+    const pool = await getPool()
+    if (!pool) throw new Error('Database pool not initialized')
+    const result = await pool.query(
+      `INSERT INTO landlord_payouts (
+         id, landlord_id, property_id, property_name, scheduled_date, completed_date,
+         gross_amount, deductions, net_amount, currency, status, channel, delay_reasons,
+         period_start, period_end, created_at, updated_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10, $11, $12, $13,
+         $14, $15, $16, $17
+       )
+       ON CONFLICT (id) DO NOTHING
+       RETURNING id`,
+      [
+        payout.id,
+        payout.landlordId,
+        payout.propertyId,
+        payout.propertyName,
+        payout.scheduledDate,
+        payout.completedDate,
+        payout.grossAmount,
+        JSON.stringify(payout.deductions),
+        payout.netAmount,
+        payout.currency,
+        payout.status,
+        payout.channel,
+        JSON.stringify(payout.delayReasons),
+        payout.periodStart,
+        payout.periodEnd,
+        payout.createdAt,
+        payout.updatedAt,
+      ],
+    )
+    return result.rows.length > 0
+  }
+
+  async sumGrossSince(landlordId: string, since: Date): Promise<number> {
+    const pool = await getPool()
+    if (!pool) throw new Error('Database pool not initialized')
+    const result = await pool.query(
+      `SELECT COALESCE(SUM(gross_amount), 0) AS total
+       FROM landlord_payouts
+       WHERE landlord_id = $1 AND created_at >= $2 AND status <> 'failed'`,
+      [landlordId, since.toISOString()],
+    )
+    return Number(result.rows[0]?.total ?? 0)
   }
 
   private mapRow(row: any): LandlordPayout {
