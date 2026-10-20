@@ -281,6 +281,7 @@ import { createWhistleblowerReportsRouter } from "./routes/whistleblowerReports.
 import { createTenantOnboardingRouter } from "./routes/tenantOnboarding.js";
 import { createDocsRouter } from "./routes/docs.js";
 import { createListingsRouter } from "./routes/listings.js";
+import { createPropertiesRouter } from "./routes/properties.js";
 import { createLeaseAgreementsRouter } from "./routes/leaseAgreements.js";
 import listingApplicationsRouter from "./routes/listingApplications.js";
 import { createKycRouter } from "./routes/kyc.js";
@@ -826,6 +827,7 @@ export function createApp() {
 
   // Apply publicSearch limiter to listing/property search routes
   app.use("/api/v1/landlord/properties", publicSearchLimiter);
+  app.use("/api/v1/properties", publicSearchLimiter);
 
   // Mount all API routes under /api/v1/
   app.use("/api/v1/auth", createAuthRateLimiter(env), authRouter);
@@ -1176,6 +1178,7 @@ export function createApp() {
   app.use("/api/v1/deposits", createDepositsRouter(conversionService));
   app.use("/api/v1", createPropertyPhotosRouter());
   app.use("/api/v1/landlord/properties", createLandlordPropertiesRouter());
+  app.use("/api/v1/properties", createPropertiesRouter());
   app.use("/api/v1/landlords", createLandlordVerificationRouter());
   app.use(
     "/api/v1/landlord/partner-application",
@@ -1217,6 +1220,7 @@ export function createApp() {
   app.use("/api/kyc", createKycRouter());
   app.use("/api/tenant/onboarding", createTenantOnboardingRouter());
   app.use("/api/listings", createListingsRouter());
+  app.use("/api/properties", createPropertiesRouter());
   app.use("/api/support/messages", createSupportMessagesRouter());
   app.use("/api/admin/support/messages", createSupportMessagesRouter());
   app.use("/api", listingApplicationsRouter);

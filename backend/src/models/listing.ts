@@ -54,6 +54,8 @@ export interface CreateListingInput {
   photos: string[]
 }
 
+export type ListingSortBy = 'price_asc' | 'price_desc' | 'newest' | 'bedrooms_desc'
+
 export interface ListingFilters {
   status?: ListingStatus
   query?: string
@@ -63,6 +65,17 @@ export interface ListingFilters {
   bedrooms?: number
   lga?: string
   paymentPlan?: string
+  /** Case-insensitive exact match on the city. */
+  city?: string
+  minBedrooms?: number
+  maxBedrooms?: number
+  minBathrooms?: number
+  maxBathrooms?: number
+  /** Bounds on annual rent itself (not on the installment base price). */
+  minAnnualRent?: number
+  maxAnnualRent?: number
+  /** Defaults to relevance for free-text searches, otherwise newest first. */
+  sortBy?: ListingSortBy
   page?: number
   pageSize?: number
 }
