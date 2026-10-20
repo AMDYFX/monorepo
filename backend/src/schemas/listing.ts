@@ -123,7 +123,7 @@ export type RejectListingRequest = z.infer<typeof rejectListingSchema>
  * Query schema for the public property search (issue #1956). Parameter names
  * follow PropertySearchFilters in frontend/lib/propertiesApi.ts.
  */
-export const propertySearchSchema = z.object({
+export const publicPropertySearchSchema = z.object({
   city: z.string().max(100).optional(),
   area: z.string().max(100).optional(),
   minBedrooms: z.coerce.number().int().min(0).optional(),
@@ -138,7 +138,7 @@ export const propertySearchSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
 
-export type PropertySearchRequest = z.infer<typeof propertySearchSchema>
+export type PublicPropertySearchRequest = z.infer<typeof publicPropertySearchSchema>
 
 /** Maximum listing ids accepted by GET /properties?listingIds=. */
 export const MAX_PROPERTY_LOOKUP_IDS = 50
@@ -147,7 +147,7 @@ export const MAX_PROPERTY_LOOKUP_IDS = 50
  * Query schema for GET /properties. `listingIds` is an optional comma-separated
  * list of listing ids. Without it, the route behaves like the search.
  */
-export const propertyListQuerySchema = propertySearchSchema.extend({
+export const propertyListQuerySchema = publicPropertySearchSchema.extend({
   listingIds: z.string().max(2000).optional(),
 })
 

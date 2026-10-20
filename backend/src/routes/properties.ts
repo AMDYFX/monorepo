@@ -17,8 +17,8 @@ import { ListingStatus, type Listing, type ListingFilters } from '../models/list
 import {
   MAX_PROPERTY_LOOKUP_IDS,
   propertyListQuerySchema,
-  propertySearchSchema,
-  type PropertySearchRequest,
+  publicPropertySearchSchema,
+  type PublicPropertySearchRequest,
 } from '../schemas/listing.js'
 import { AppError } from '../errors/AppError.js'
 import { ErrorCode } from '../errors/errorCodes.js'
@@ -63,7 +63,7 @@ export function toPropertyListing(listing: Listing): PropertyListing {
   }
 }
 
-function searchFilters(query: PropertySearchRequest): ListingFilters {
+function searchFilters(query: PublicPropertySearchRequest): ListingFilters {
   return {
     status: ListingStatus.APPROVED,
     q: query.query,
@@ -95,7 +95,7 @@ export function createPropertiesRouter(): Router {
   // Approved properties with the search filters the frontend sends.
   router.get('/search', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const query = propertySearchSchema.parse(req.query)
+      const query = publicPropertySearchSchema.parse(req.query)
       const result = await listingStore.search(searchFilters(query))
 
       res.json({
