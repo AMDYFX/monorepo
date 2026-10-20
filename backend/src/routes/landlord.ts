@@ -6,6 +6,7 @@ import { AppError } from '../errors/AppError.js'
 import { ErrorCode } from '../errors/errorCodes.js'
 import { kycRepository, MAX_ATTEMPTS } from '../repositories/KycRepository.js'
 import { getPaymentProvider } from '../payments/registry.js'
+import { getLandlordDashboardStats } from '../services/landlordDashboardStats.js'
 
 export function createLandlordRouter() {
   const router = Router()
@@ -108,6 +109,23 @@ export function createLandlordRouter() {
         updatedAt: record.updatedAt,
         expiresAt: record.expiresAt,
       })
+    } catch (error) {
+      next(error)
+    }
+  })
+
+  // GET /api/landlord/dashboard/stats
+  // Headline numbers for the landlord home page. Cached per landlord for 60s (issue #1957).
+  router.get('/dashboard/stats', async (req: Request, res: Response, next: NextFunction) => {
+    const authReq = req as AuthenticatedRequest
+    try {
+      const landlordId = authReq.user?.id
+      if (!landlordId) throw new AppError(ErrorCode.UNAUTHORIZED, 401, 'Unauthorized')
+      if (authReq.user?.role !== 'landlord') {
+        throw new AppError(ErrorCode.FORBIDDEN, 403, 'Only landlords can view dashboard stats')
+      }
+
+      res.json(await getLandlordDashboardStats(landlordId))
     } catch (error) {
       next(error)
     }

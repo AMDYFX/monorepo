@@ -10,6 +10,7 @@ import { AppError } from '../errors/AppError.js'
 import { ErrorCode } from '../errors/errorCodes.js'
 import { TxType } from '../outbox/types.js'
 import { settleFullPaymentIncentive } from '../services/fullPaymentIncentiveSettlement.js'
+import { recordLandlordPayoutForRentPayment } from '../services/landlordPayoutRecording.js'
 import { enqueueDelivery } from '../services/webhookDeliveryService.js'
 import { WebhookEventType } from '../models/webhookSubscription.js'
 import { dealStore } from '../models/dealStore.js'
@@ -119,6 +120,23 @@ export function createPaymentsRouter(adapter: SorobanAdapter) {
             reporterApplied: payoutBreakdown.reporterApplied,
             requestId: req.requestId,
           })
+        }
+
+        if (txType === TxType.TENANT_REPAYMENT && typeof amountNgn === 'number' && amountNgn > 0) {
+          // Ledger row for the landlord's payout. The payment is already accepted,
+          // so a failure here is logged and does not change the response (issue #1955).
+          await recordLandlordPayoutForRentPayment({
+            dealId,
+            paymentRef: `${externalRefSource}:${externalRef}`,
+            amountNgn,
+            paidAt: new Date(),
+          }).catch((err) =>
+            logger.error('Failed to record landlord payout for rent payment', {
+              dealId,
+              requestId: req.requestId,
+              error: err instanceof Error ? err.message : String(err),
+            }),
+          )
         }
 
         if (txType === TxType.TENANT_REPAYMENT) {

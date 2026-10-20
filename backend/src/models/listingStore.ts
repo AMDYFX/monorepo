@@ -6,6 +6,7 @@ import {
   ListingStatus,
   CreateListingInput,
   ListingFilters,
+  ListingSortBy,
   PaginatedListings,
 } from './listing.js'
 
@@ -97,6 +98,28 @@ class InMemoryListingStore implements ListingStorePort {
     if (filters.bedrooms != null) {
       filtered = filtered.filter((l) => l.bedrooms === filters.bedrooms)
     }
+    if (filters.city && filters.city.trim()) {
+      const city = filters.city.trim().toLowerCase()
+      filtered = filtered.filter((l) => l.city?.toLowerCase() === city)
+    }
+    if (filters.minBedrooms != null) {
+      filtered = filtered.filter((l) => l.bedrooms >= filters.minBedrooms!)
+    }
+    if (filters.maxBedrooms != null) {
+      filtered = filtered.filter((l) => l.bedrooms <= filters.maxBedrooms!)
+    }
+    if (filters.minBathrooms != null) {
+      filtered = filtered.filter((l) => l.bathrooms >= filters.minBathrooms!)
+    }
+    if (filters.maxBathrooms != null) {
+      filtered = filtered.filter((l) => l.bathrooms <= filters.maxBathrooms!)
+    }
+    if (filters.minAnnualRent != null) {
+      filtered = filtered.filter((l) => l.annualRentNgn >= filters.minAnnualRent!)
+    }
+    if (filters.maxAnnualRent != null) {
+      filtered = filtered.filter((l) => l.annualRentNgn <= filters.maxAnnualRent!)
+    }
     if (filters.lga && filters.lga.trim()) {
       const lga = filters.lga.toLowerCase()
       filtered = filtered.filter((l) => l.area?.toLowerCase() === lga)
@@ -105,7 +128,15 @@ class InMemoryListingStore implements ListingStorePort {
       filtered = filtered.filter((l) => l.installmentBasePriceNgn != null)
     }
 
-    filtered.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    const priceOf = (l: Listing) => l.installmentBasePriceNgn ?? l.annualRentNgn
+    const newestFirst = (a: Listing, b: Listing) => b.createdAt.getTime() - a.createdAt.getTime()
+    const comparators: Record<ListingSortBy, (a: Listing, b: Listing) => number> = {
+      price_asc: (a, b) => priceOf(a) - priceOf(b) || newestFirst(a, b),
+      price_desc: (a, b) => priceOf(b) - priceOf(a) || newestFirst(a, b),
+      newest: newestFirst,
+      bedrooms_desc: (a, b) => b.bedrooms - a.bedrooms || newestFirst(a, b),
+    }
+    filtered.sort(filters.sortBy ? comparators[filters.sortBy] : newestFirst)
 
     const total = filtered.length
     const totalPages = Math.ceil(total / pageSize)
@@ -352,6 +383,21 @@ class PostgresListingStore implements ListingStorePort {
     return this.search(filters)
   }
 
+  private orderByFor(sortBy: ListingSortBy | undefined): string {
+    switch (sortBy) {
+      case 'price_asc':
+        return 'COALESCE(installment_base_price_ngn, annual_rent_ngn) ASC, created_at DESC'
+      case 'price_desc':
+        return 'COALESCE(installment_base_price_ngn, annual_rent_ngn) DESC, created_at DESC'
+      case 'newest':
+        return 'created_at DESC'
+      case 'bedrooms_desc':
+        return 'bedrooms DESC, created_at DESC'
+      default:
+        return 'search_rank DESC, created_at DESC'
+    }
+  }
+
   async search(filters: ListingFilters = {}): Promise<PaginatedListings> {
     const pool = await this.pool()
     const where: string[] = ['deleted_at IS NULL']
@@ -402,6 +448,28 @@ class PostgresListingStore implements ListingStorePort {
       where.push('installment_base_price_ngn IS NOT NULL')
     }
 
+    if (filters.city && filters.city.trim()) {
+      values.push(filters.city.trim())
+      where.push(`LOWER(COALESCE(city, '')) = LOWER($${values.length})`)
+    }
+
+    const rangeClauses: Array<[number | undefined, string]> = [
+      [filters.minBedrooms, 'bedrooms >= '],
+      [filters.maxBedrooms, 'bedrooms <= '],
+      [filters.minBathrooms, 'bathrooms >= '],
+      [filters.maxBathrooms, 'bathrooms <= '],
+      [filters.minAnnualRent, 'annual_rent_ngn >= '],
+      [filters.maxAnnualRent, 'annual_rent_ngn <= '],
+    ]
+    for (const [value, clause] of rangeClauses) {
+      if (value != null) {
+        values.push(value)
+        where.push(`${clause}$${values.length}`)
+      }
+    }
+
+    const orderBy = this.orderByFor(filters.sortBy)
+
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : ''
     const page = filters.page && filters.page > 0 ? filters.page : 1
     const pageSize = filters.pageSize && filters.pageSize > 0 ? filters.pageSize : 20
@@ -416,7 +484,7 @@ class PostgresListingStore implements ListingStorePort {
     const listingRows = await pool.query(
       `SELECT *, ${rankExpression} AS search_rank, ${headlineExpression} AS highlighted_snippet
        FROM whistleblower_listings ${whereClause}
-       ORDER BY search_rank DESC, created_at DESC
+       ORDER BY ${orderBy}
        LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       queryValues,
     )
