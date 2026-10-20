@@ -6546,6 +6546,43 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/landlord/dashboard/stats:
+    get:
+      summary: Landlord dashboard statistics
+      description: |
+        Headline numbers for the landlord home page (#1957). Landlords only.
+
+        - totalProperties: every property the landlord has, whatever its status.
+        - activeListings: properties that are approved (or the legacy active status).
+        - totalViews: sum of the view counts on the landlord's properties.
+        - monthlyRevenueNgn: gross of payouts recorded from confirmed rent payments
+          in the current UTC calendar month. Failed payouts are excluded.
+
+        Results are cached per landlord for 60 seconds.
+      operationId: getLandlordDashboardStats
+      tags:
+        - Landlord
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [totalProperties, activeListings, totalViews, monthlyRevenueNgn]
+                properties:
+                  totalProperties: { type: integer, minimum: 0 }
+                  activeListings: { type: integer, minimum: 0 }
+                  totalViews: { type: integer, minimum: 0 }
+                  monthlyRevenueNgn: { type: number, minimum: 0 }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        default:
+          $ref: '#/components/responses/Error'
   /api/v1/landlord/payout-schedule:
     get:
       summary: Landlord payout schedule grouped into periods
@@ -6731,6 +6768,118 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
+  /api/v1/properties/search:
+    get:
+      summary: Search approved properties
+      description: |
+        Public search over approved properties (#1956). Parameter names follow
+        PropertySearchFilters in the frontend client. Rate limited by the public
+        search limiter.
+      operationId: searchPublicProperties
+      tags:
+        - Properties
+      parameters:
+        - { name: city, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: area, in: query, description: Area (LGA) match, schema: { type: string, maxLength: 100 } }
+        - { name: minBedrooms, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: maxBedrooms, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: minBathrooms, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: maxBathrooms, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: minAnnualRent, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: maxAnnualRent, in: query, schema: { type: integer, minimum: 0 } }
+        - { name: query, in: query, schema: { type: string, maxLength: 200 } }
+        - { name: sortBy, in: query, schema: { type: string, enum: [price_asc, price_desc, newest, bedrooms_desc] } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: One page of approved properties
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, total, page, pageSize, totalPages]
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicProperty'
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  totalPages: { type: integer }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/properties:
+    get:
+      summary: Look up approved properties by listing id
+      description: |
+        Returns the approved properties among the listing ids in `listingIds`, in the
+        order requested. Unknown and unapproved ids are skipped. At most 50 ids are
+        accepted. Without `listingIds` the response matches /api/v1/properties/search.
+      operationId: listPublicProperties
+      tags:
+        - Properties
+      parameters:
+        - { name: listingIds, in: query, description: Comma separated listing ids, schema: { type: string, maxLength: 2000 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: pageSize, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Matching approved properties
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, total, page, pageSize, totalPages]
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PublicProperty'
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+                  totalPages: { type: integer }
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        default:
+          $ref: '#/components/responses/Error'
+  /api/v1/properties/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        description: Listing id
+        schema:
+          type: string
+    get:
+      summary: Get an approved property
+      description: |
+        Returns one approved property (#1956). Unapproved or unknown listings return 404.
+      operationId: getPublicProperty
+      tags:
+        - Properties
+      responses:
+        '200':
+          description: The property
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data]
+                properties:
+                  success: { type: boolean }
+                  data:
+                    $ref: '#/components/schemas/PublicProperty'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
   /api/v1/tenant/saved-properties/{listingId}:
     parameters:
       - name: listingId
@@ -7754,6 +7903,27 @@ components:
         type: string
         format: uuid
   schemas:
+    PublicProperty:
+      type: object
+      description: Approved property as returned by the public property routes (#1956). Amenities are omitted because listings do not store them yet.
+      required: [listingId, whistleblowerId, address, bedrooms, bathrooms, annualRentNgn, hasApprovedInspection, photos, status, createdAt, updatedAt]
+      properties:
+        listingId: { type: string }
+        whistleblowerId: { type: string }
+        address: { type: string }
+        city: { type: string }
+        area: { type: string }
+        bedrooms: { type: integer, minimum: 0 }
+        bathrooms: { type: integer, minimum: 0 }
+        annualRentNgn: { type: integer, minimum: 0 }
+        outrightPriceNgn: { type: integer, minimum: 0 }
+        installmentBasePriceNgn: { type: integer, minimum: 0 }
+        hasApprovedInspection: { type: boolean }
+        description: { type: string }
+        photos: { type: array, items: { type: string } }
+        status: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     PayoutBreakdown:
       type: object
       description: Payout split for a full early-settlement payment (#1961)
@@ -10369,3 +10539,5 @@ tags:
     description: Stake-weighted parameter governance proposals and voting (contracts/governance)
   - name: Tenant Rating
     description: Landlord ratings of tenants after a deal, and the tenant's portable rating card with expiring public share links (#1905)
+  - name: Properties
+    description: Public search, lookup and detail for approved properties (#1956)
