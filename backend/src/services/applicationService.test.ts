@@ -20,6 +20,11 @@ vi.mock("../outbox/index.js", () => ({
     create: vi.fn().mockResolvedValue({}),
   },
 }));
+vi.mock("../models/listingStore.js", () => ({
+  listingStore: {
+    getById: vi.fn(),
+  },
+}));
 vi.mock("./rtiAssessmentService.js", () => ({
   computeRti: vi.fn().mockReturnValue({
     monthlyIncome: 100000,
@@ -514,6 +519,7 @@ describe("ApplicationService", () => {
 
     it("computes and attaches RTI assessment during application review", async () => {
       const { computeRti } = await import("./rtiAssessmentService.js");
+      const { listingStore } = await import("../models/listingStore.js");
       const mockRtiAssessment = {
         monthlyIncome: 100000,
         monthlyRepayment: 5000,
@@ -522,6 +528,12 @@ describe("ApplicationService", () => {
         assessedAt: "2026-08-28T00:00:00.000Z",
       };
 
+      // 6-month plan on ₦2,400,000 rent: deposit 20% (₦480,000), financed
+      // ₦1,920,000 at 12% p.a. over 6 months = ₦115,200 interest, so
+      // ₦2,035,200 / 6 = ₦339,200 per instalment (same as the deal schedule).
+      vi.mocked(listingStore.getById).mockResolvedValue({
+        annualRentNgn: 2_400_000,
+      } as any);
       vi.mocked(listingApplicationRepository.findById).mockResolvedValue(
         mockApplication,
       );
@@ -538,9 +550,9 @@ describe("ApplicationService", () => {
         "approve",
       );
 
-      // Verify RTI was computed
-      expect(computeRti).toHaveBeenCalledWith("tenant-1", 5000);
-      // Verify updateStatus was called with RTI assessment
+      // Verify RTI was computed against the real first instalment, not a placeholder
+      expect(computeRti).toHaveBeenCalledWith("tenant-1", 339200);
+      // Verify updateStatus was called with RTI assessment and its basis
       expect(listingApplicationRepository.updateStatus).toHaveBeenCalledWith(
         applicationId,
         "approved",
@@ -549,6 +561,11 @@ describe("ApplicationService", () => {
         expect.objectContaining({
           verdict: "pass",
           rtiPercent: 5,
+          repaymentBasis: {
+            annualRentNgn: 2_400_000,
+            depositPercent: 20,
+            termMonths: 6,
+          },
         }),
       );
       // Verify RTI is in response
@@ -558,9 +575,13 @@ describe("ApplicationService", () => {
 
     it("continues review even if RTI computation fails", async () => {
       const { computeRti } = await import("./rtiAssessmentService.js");
+      const { listingStore } = await import("../models/listingStore.js");
       vi.mocked(computeRti).mockImplementation(() => {
         throw new Error("RTI service unavailable");
       });
+      vi.mocked(listingStore.getById).mockResolvedValue({
+        annualRentNgn: 2_400_000,
+      } as any);
 
       vi.mocked(listingApplicationRepository.findById).mockResolvedValue(
         mockApplication,
@@ -586,6 +607,43 @@ describe("ApplicationService", () => {
         landlordId,
         undefined,
         undefined,
+      );
+    });
+
+    it("skips RTI and records the reason when the listing terms are missing", async () => {
+      const { computeRti } = await import("./rtiAssessmentService.js");
+      const { listingStore } = await import("../models/listingStore.js");
+      vi.mocked(computeRti).mockClear();
+      vi.mocked(listingStore.getById).mockResolvedValue(null);
+
+      vi.mocked(listingApplicationRepository.findById).mockResolvedValue(
+        mockApplication,
+      );
+      vi.mocked(listingApplicationRepository.updateStatus).mockResolvedValue({
+        ...mockApplication,
+        status: ListingApplicationStatus.APPROVED,
+      });
+      vi.mocked(auditLog).mockImplementation(() => {});
+
+      await applicationService.reviewApplication(
+        applicationId,
+        landlordId,
+        "approve",
+      );
+
+      // No placeholder repayment is priced, so no RTI is computed or stored
+      expect(computeRti).not.toHaveBeenCalled();
+      expect(listingApplicationRepository.updateStatus).toHaveBeenCalledWith(
+        applicationId,
+        "approved",
+        landlordId,
+        undefined,
+        undefined,
+      );
+      expect(auditLog).toHaveBeenCalledWith(
+        "LISTING_APPROVED",
+        expect.anything(),
+        expect.objectContaining({ rtiUnavailableReason: "missing_rent" }),
       );
     });
   });

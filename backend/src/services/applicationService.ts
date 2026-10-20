@@ -11,13 +11,16 @@ import {
   ListingApplication,
   ListingApplicationStatus,
   CreateListingApplicationInput,
+  RtiAssessment,
 } from "../models/listingApplication.js";
 import { AppError } from "../errors/AppError.js";
 import { ErrorCode } from "../errors/errorCodes.js";
 import { auditLog, AuditContext } from "../utils/auditLogger.js";
 import { outboxStore } from "../outbox/index.js";
 import { logger } from "../utils/logger.js";
+import { listingStore } from "../models/listingStore.js";
 import { computeRti } from "./rtiAssessmentService.js";
+import { deriveReviewRepayment } from "./reviewRepayment.js";
 
 export class ApplicationService {
   constructor(
@@ -125,20 +128,36 @@ export class ApplicationService {
         ? ListingApplicationStatus.APPROVED
         : ListingApplicationStatus.REJECTED;
 
-    // Compute RTI assessment for the tenant
-    // For review flow, we use a nominal monthly repayment of 5000 NGN as default
-    // In production, this would come from an actual deal/installment plan
-    let rtiAssessment;
-    try {
-      rtiAssessment = computeRti(application.tenantId, 5000);
-    } catch (error) {
-      logger.warn("Failed to compute RTI assessment", {
+    // Compute RTI against the instalment the deal would actually charge.
+    // When the terms cannot be priced, no assessment is stored and the reason
+    // is recorded instead of a placeholder repayment (issue #1953).
+    let rtiAssessment: RtiAssessment | undefined;
+    let rtiUnavailableReason: string | undefined;
+    const listing = await listingStore.getById(application.listingId);
+    const repayment = deriveReviewRepayment({
+      annualRentNgn: listing?.annualRentNgn ?? null,
+      paymentPlan: application.paymentPlan,
+    });
+    if (repayment.available) {
+      try {
+        rtiAssessment = {
+          ...computeRti(application.tenantId, repayment.monthlyRepayment),
+          repaymentBasis: repayment.basis,
+        };
+      } catch (error) {
+        logger.warn("Failed to compute RTI assessment", {
+          applicationId,
+          tenantId: application.tenantId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Don't fail the review if RTI computation fails - it's an optional signal
+      }
+    } else {
+      rtiUnavailableReason = repayment.reason;
+      logger.info("RTI assessment skipped: repayment terms unavailable", {
         applicationId,
-        tenantId: application.tenantId,
-        error: error instanceof Error ? error.message : String(error),
+        reason: repayment.reason,
       });
-      // Don't fail the review if RTI computation fails - it's an optional signal
-      rtiAssessment = undefined;
     }
 
     const updated = await this.applicationRepository.updateStatus(
@@ -176,6 +195,7 @@ export class ApplicationService {
         decision,
         notes,
         rtiVerdict: rtiAssessment?.verdict,
+        rtiUnavailableReason,
       },
     );
 

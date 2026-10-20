@@ -24,6 +24,12 @@ export interface RtiAssessment {
   rtiPercent: number | null;
   verdict: "pass" | "borderline" | "fail" | "income_unverified";
   assessedAt: string;
+  /** Terms the monthly repayment was derived from (issue #1953). */
+  repaymentBasis?: {
+    annualRentNgn: number;
+    depositPercent: number;
+    termMonths: number;
+  };
 }
 
 export interface ListingApplication {
